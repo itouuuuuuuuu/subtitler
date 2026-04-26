@@ -36,3 +36,8 @@ chrome.runtime.onInstalled.addListener(async () => {
     console.warn('[subtitler/bg] commands.getAll() failed:', e);
   }
 });
+
+// Test-only exports (no-op in the service worker since `module` is undefined).
+if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
+  module.exports = { sendToggle };
+}

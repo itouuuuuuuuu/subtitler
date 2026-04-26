@@ -65,7 +65,36 @@ extension/
   background.js   # Service worker: relays the shortcut & toolbar click
   content.js      # Main logic: collection, translation, observers
   styles.css      # Subtitle, loading, and banner styles
+tests/
+  setup.mjs       # Browser-API mocks (chrome.*, Translator, IntersectionObserver, requestIdleCallback)
+  content.test.mjs
+  background.test.mjs
 ```
+
+## Testing
+
+The extension ships with a Vitest + jsdom test suite that covers the pure
+helpers (`hasLatinLetter`, `isToggleShortcut`, `shouldTranslate`), the DOM
+pipeline (`processTextNode`, `collectAndInject`, `collectFromTextNode`,
+`replaceLoadingWithTranslation`, `setVisibility`), the toggle state machine
+(`handleToggle`), the `IntersectionObserver`-driven lazy translation flow,
+the in-memory translation cache, the `<option>` skip rule, and the
+idempotent re-scan guarantee that prevents duplicate subtitles when a SPA
+reparents an already-translated subtree.
+
+```sh
+npm install         # one-time
+npm test            # run the suite once
+npm run test:watch  # re-run on file changes
+npm run test:coverage
+```
+
+Browser globals (`chrome.*`, `Translator`, `IntersectionObserver`,
+`requestIdleCallback`) are mocked in `tests/setup.mjs`. Tests load the real
+`extension/content.js` and `extension/background.js` modules; both files
+expose a CommonJS `module.exports` block guarded by `typeof module`, which
+is a no-op in the browser but makes the source units consumable from
+`vitest`.
 
 ## Privacy
 
