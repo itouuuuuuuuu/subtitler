@@ -1,0 +1,555 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Importing content.js triggers its top-level side effects (registering
+// chrome.runtime.onMessage and a keydown listener on window). The mocks set
+// up in tests/setup.mjs make those calls no-ops.
+import subtitler from '../extension/content.js';
+
+const {
+  handleToggle,
+  isOnMac,
+  isToggleShortcut,
+  shouldTranslate,
+  hasLatinLetter,
+  setVisibility,
+  processTextNode,
+  collectAndInject,
+  collectFromTextNode,
+  replaceLoadingWithTranslation,
+  state,
+  __test,
+} = subtitler;
+
+beforeEach(() => {
+  __test.reset();
+  document.body.innerHTML = '';
+  globalThis.__IntersectionObserverMock.instances.length = 0;
+  globalThis.__TranslatorMock.availability.mockReset().mockResolvedValue('available');
+  globalThis.__TranslatorMock.create
+    .mockReset()
+    .mockImplementation(async () => globalThis.__makeTranslatorInstance());
+});
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+describe('hasLatinLetter', () => {
+  it('returns true when Latin letters are present', () => {
+    expect(hasLatinLetter('Hello')).toBe(true);
+    expect(hasLatinLetter('123 abc 456')).toBe(true);
+    expect(hasLatinLetter('日本語 mixed text')).toBe(true);
+  });
+
+  it('returns false when no Latin letters', () => {
+    expect(hasLatinLetter('こんにちは')).toBe(false);
+    expect(hasLatinLetter('1234567890')).toBe(false);
+    expect(hasLatinLetter('   ')).toBe(false);
+    expect(hasLatinLetter('')).toBe(false);
+  });
+});
+
+describe('isToggleShortcut', () => {
+  it('matches the shortcut on the host platform', () => {
+    const onMac = isOnMac();
+    const ev = onMac
+      ? { key: 'y', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false }
+      : { key: 'y', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true };
+    expect(isToggleShortcut(ev)).toBe(true);
+  });
+
+  it('also accepts uppercase Y', () => {
+    const onMac = isOnMac();
+    const ev = onMac
+      ? { key: 'Y', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false }
+      : { key: 'Y', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true };
+    expect(isToggleShortcut(ev)).toBe(true);
+  });
+
+  it('rejects keys other than y', () => {
+    expect(
+      isToggleShortcut({ key: 'x', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false })
+    ).toBe(false);
+    expect(
+      isToggleShortcut({ key: 'a', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true })
+    ).toBe(false);
+  });
+
+  it('rejects when Shift is missing', () => {
+    expect(
+      isToggleShortcut({ key: 'y', shiftKey: false, altKey: false, metaKey: true, ctrlKey: false })
+    ).toBe(false);
+  });
+
+  it('rejects when Alt is held', () => {
+    expect(
+      isToggleShortcut({ key: 'y', shiftKey: true, altKey: true, metaKey: true, ctrlKey: false })
+    ).toBe(false);
+  });
+
+  it('rejects when key is not a string', () => {
+    expect(isToggleShortcut({ key: undefined, shiftKey: true, metaKey: true })).toBe(false);
+    expect(isToggleShortcut({})).toBe(false);
+  });
+
+  it('rejects the wrong-platform modifier on the host platform', () => {
+    const onMac = isOnMac();
+    // Inverse of the host-platform expectation
+    const wrong = onMac
+      ? { key: 'y', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true }
+      : { key: 'y', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false };
+    expect(isToggleShortcut(wrong)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shouldTranslate
+// ---------------------------------------------------------------------------
+describe('shouldTranslate', () => {
+  it('rejects fewer than 3 words', () => {
+    document.body.innerHTML = '<div id="x">x</div>';
+    const div = document.getElementById('x');
+    expect(shouldTranslate('Hello world', div)).toBe(false);
+    expect(shouldTranslate('Hi', div)).toBe(false);
+    expect(shouldTranslate('Submit', div)).toBe(false);
+  });
+
+  it('accepts 3+ words inside a regular block element', () => {
+    document.body.innerHTML = '<div id="x">x</div>';
+    const div = document.getElementById('x');
+    expect(shouldTranslate('Hello there friend.', div)).toBe(true);
+    expect(shouldTranslate('This is a moderately long sentence in body text.', div)).toBe(true);
+  });
+
+  it('rejects content inside <button> regardless of length', () => {
+    document.body.innerHTML = '<button id="b"><span id="s">x</span></button>';
+    const span = document.getElementById('s');
+    expect(shouldTranslate('Click here to do something now', span)).toBe(false);
+  });
+
+  it('rejects content with role="button" regardless of length', () => {
+    document.body.innerHTML = '<div role="button"><span id="s">x</span></div>';
+    const span = document.getElementById('s');
+    expect(
+      shouldTranslate('Click here to do something interesting and important now', span)
+    ).toBe(false);
+  });
+
+  it('rejects content with role="link" when short', () => {
+    document.body.innerHTML = '<div role="link"><span id="s">x</span></div>';
+    const span = document.getElementById('s');
+    expect(shouldTranslate('See more docs.', span)).toBe(false);
+  });
+
+  it('rejects short text inside <a>', () => {
+    document.body.innerHTML = '<a href="#"><span id="s">x</span></a>';
+    const span = document.getElementById('s');
+    expect(shouldTranslate('See more docs.', span)).toBe(false);
+    expect(shouldTranslate('Read full article today.', span)).toBe(false);
+  });
+
+  it('accepts long text inside <a>', () => {
+    document.body.innerHTML = '<a href="#"><span id="s">x</span></a>';
+    const span = document.getElementById('s');
+    expect(
+      shouldTranslate('This is a long article about TypeScript fundamentals today.', span)
+    ).toBe(true);
+  });
+
+  it('rejects short text inside <label>', () => {
+    document.body.innerHTML = '<label><span id="s">x</span></label>';
+    const span = document.getElementById('s');
+    expect(shouldTranslate('Enter your email here.', span)).toBe(false);
+  });
+
+  it('rejects short text inside <summary>', () => {
+    document.body.innerHTML = '<details><summary><span id="s">x</span></summary></details>';
+    const span = document.getElementById('s');
+    expect(shouldTranslate('See more details please.', span)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setVisibility
+// ---------------------------------------------------------------------------
+describe('setVisibility', () => {
+  it('hides every data-subtitler-injected element', () => {
+    document.body.innerHTML = `
+      <span data-subtitler-injected="true">a</span>
+      <span data-subtitler-injected="true">b</span>
+      <span>c</span>
+    `;
+    setVisibility(false);
+    const injected = document.querySelectorAll('[data-subtitler-injected="true"]');
+    for (const el of injected) {
+      expect(el.style.display).toBe('none');
+    }
+    const plain = document.querySelectorAll('span:not([data-subtitler-injected])');
+    for (const el of plain) {
+      expect(el.style.display).toBe('');
+    }
+  });
+
+  it('clears the inline display when shown', () => {
+    document.body.innerHTML = `
+      <span data-subtitler-injected="true" style="display: none;">a</span>
+    `;
+    setVisibility(true);
+    const el = document.querySelector('[data-subtitler-injected="true"]');
+    expect(el.style.display).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// processTextNode
+// ---------------------------------------------------------------------------
+describe('processTextNode', () => {
+  it('inserts loading spans for each translatable sentence', () => {
+    document.body.innerHTML = '<p id="p">Hello world today. Goodbye yesterday already.</p>';
+    state.visible = true;
+    const tn = document.getElementById('p').firstChild;
+    const count = processTextNode(tn);
+    expect(count).toBe(2);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(2);
+    expect(state.injected).toBe(true);
+  });
+
+  it('does not inject when the text has no Latin letters', () => {
+    document.body.innerHTML = '<p id="p">こんにちは世界</p>';
+    state.visible = true;
+    const tn = document.getElementById('p').firstChild;
+    const count = processTextNode(tn);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('does not inject when shouldTranslate rejects every sentence', () => {
+    document.body.innerHTML = '<button id="b">Click here to submit now.</button>';
+    state.visible = true;
+    const tn = document.getElementById('b').firstChild;
+    const count = processTextNode(tn);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('marks unprocessable text nodes so they are skipped on a re-walk', () => {
+    document.body.innerHTML = '<button id="b">Click here to submit now.</button>';
+    state.visible = true;
+    const tn = document.getElementById('b').firstChild;
+    processTextNode(tn);
+    // collectFromTextNode would short-circuit even before SKIP_TAGS check
+    expect(collectFromTextNode(tn)).toBe(0);
+  });
+
+  it('hides loading inline when state.visible is false at injection time', () => {
+    document.body.innerHTML = '<p id="p">Hello world today.</p>';
+    state.visible = false;
+    const tn = document.getElementById('p').firstChild;
+    processTextNode(tn);
+    const loading = document.querySelector('.subtitler-loading');
+    expect(loading).not.toBeNull();
+    expect(loading.style.display).toBe('none');
+  });
+
+  it('returns 0 for an orphan text node (no parentNode)', () => {
+    const orphan = document.createTextNode('Hello world today.');
+    expect(processTextNode(orphan)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectAndInject
+// ---------------------------------------------------------------------------
+describe('collectAndInject', () => {
+  it('skips SCRIPT/STYLE/SELECT/OPTION/OPTGROUP subtrees', () => {
+    document.body.innerHTML = `
+      <script>var foo = "Hello world today. This is a test.";</script>
+      <style>body { content: "Hello world today."; }</style>
+      <select><option>Please select your preferred delivery method below today</option></select>
+      <p>Hello world today.</p>
+    `;
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(1);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(1);
+    expect(
+      document.querySelector('option').querySelectorAll('.subtitler-loading').length
+    ).toBe(0);
+  });
+
+  it('skips contenteditable subtree', () => {
+    document.body.innerHTML = '<div contenteditable="true">Hello world today is fine.</div>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+  });
+
+  it('skips already-injected subtrees', () => {
+    document.body.innerHTML =
+      '<p data-subtitler-injected="true">Hello world today is fine.</p>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+  });
+
+  it('returns 0 when the root itself is in SKIP_TAGS', () => {
+    document.body.innerHTML = '<select id="s"><option>Please choose something interesting now.</option></select>';
+    state.visible = true;
+    const select = document.getElementById('s');
+    expect(collectAndInject(select)).toBe(0);
+  });
+
+  it('handles null / non-element roots gracefully', () => {
+    expect(collectAndInject(null)).toBe(0);
+    expect(collectAndInject(undefined)).toBe(0);
+  });
+
+  it('walks nested elements end-to-end', () => {
+    document.body.innerHTML = `
+      <article>
+        <h1>This is the article title here.</h1>
+        <p>First paragraph runs across this line.</p>
+        <p>Second paragraph keeps going onward.</p>
+      </article>
+    `;
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectFromTextNode
+// ---------------------------------------------------------------------------
+describe('collectFromTextNode', () => {
+  it('returns 0 when an ancestor is in SKIP_TAGS', () => {
+    document.body.innerHTML =
+      '<select><option id="o">Please choose your preferred delivery method.</option></select>';
+    state.visible = true;
+    const tn = document.getElementById('o').firstChild;
+    expect(collectFromTextNode(tn)).toBe(0);
+  });
+
+  it('returns 0 when a parent is data-subtitler-injected', () => {
+    document.body.innerHTML =
+      '<span id="x" data-subtitler-injected="true">Hello world today is fine.</span>';
+    state.visible = true;
+    const tn = document.getElementById('x').firstChild;
+    expect(collectFromTextNode(tn)).toBe(0);
+  });
+
+  it('processes a valid text node', () => {
+    document.body.innerHTML = '<p id="p">Hello world today is fine.</p>';
+    state.visible = true;
+    const tn = document.getElementById('p').firstChild;
+    expect(collectFromTextNode(tn)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleToggle state machine
+// ---------------------------------------------------------------------------
+describe('handleToggle', () => {
+  it('the first toggle sets injected=true and visible=true', async () => {
+    document.body.innerHTML = '<p>Hello world today. Another sentence here please.</p>';
+    await handleToggle();
+    expect(state.injected).toBe(true);
+    expect(state.visible).toBe(true);
+  });
+
+  it('a second toggle hides every injected element', async () => {
+    document.body.innerHTML = '<p>Hello world today. Another sentence here please.</p>';
+    await handleToggle();
+    await handleToggle();
+    expect(state.visible).toBe(false);
+    const injected = document.querySelectorAll('[data-subtitler-injected="true"]');
+    for (const el of injected) expect(el.style.display).toBe('none');
+  });
+
+  it('a third toggle shows every injected element again', async () => {
+    document.body.innerHTML = '<p>Hello world today. Another sentence here please.</p>';
+    await handleToggle();
+    await handleToggle();
+    await handleToggle();
+    expect(state.visible).toBe(true);
+    const injected = document.querySelectorAll('[data-subtitler-injected="true"]');
+    for (const el of injected) expect(el.style.display).toBe('');
+  });
+
+  it('rolls back visibility if the translator is unavailable', async () => {
+    globalThis.__TranslatorMock.availability.mockResolvedValueOnce('unavailable');
+    document.body.innerHTML = '<p>Hello world today is fine.</p>';
+    await handleToggle();
+    expect(state.injected).toBe(false);
+    expect(state.visible).toBe(false);
+  });
+
+  it('rolls back visibility if the page contains no translatable text', async () => {
+    document.body.innerHTML = '<p>こんにちは。</p>';
+    await handleToggle();
+    expect(state.injected).toBe(false);
+    expect(state.visible).toBe(false);
+  });
+
+  it('drops re-entrant invocations while the first one is still running', async () => {
+    document.body.innerHTML = '<p>Hello world today. Another sentence here please.</p>';
+    const p1 = handleToggle();
+    const p2 = handleToggle();
+    await Promise.all([p1, p2]);
+    // At most one initialization happened
+    expect(globalThis.__TranslatorMock.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// IntersectionObserver-driven lazy translation
+// ---------------------------------------------------------------------------
+describe('lazy translation via IntersectionObserver', () => {
+  it('only translates loadings that intersect the viewport', async () => {
+    document.body.innerHTML = '<p>Hello world today. A second sentence appears here.</p>';
+    await handleToggle();
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    expect(loadings.length).toBe(2);
+
+    const io = globalThis.__IntersectionObserverMock.instances[0];
+    expect(io).toBeDefined();
+    io.trigger(loadings[0]);
+    await globalThis.__flushAsync();
+
+    expect(document.querySelectorAll('.subtitler-ja').length).toBe(1);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(1);
+  });
+
+  it('translates remaining loadings when they enter the viewport later', async () => {
+    document.body.innerHTML = '<p>Hello world today. A second sentence appears here.</p>';
+    await handleToggle();
+    const io = globalThis.__IntersectionObserverMock.instances[0];
+    io.triggerObserved();
+    await globalThis.__flushAsync();
+    expect(document.querySelectorAll('.subtitler-ja').length).toBe(2);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('stores translations in the cache after first lookup', async () => {
+    document.body.innerHTML = '<p>Hello world today is fine.</p>';
+    await handleToggle();
+    const io = globalThis.__IntersectionObserverMock.instances[0];
+    io.triggerObserved();
+    await globalThis.__flushAsync();
+    expect(__test.cache.has('Hello world today is fine.')).toBe(true);
+    expect(__test.cache.get('Hello world today is fine.')).toBe(
+      '[ja]Hello world today is fine.'
+    );
+  });
+
+  it('reuses the cache instead of calling translator again', async () => {
+    document.body.innerHTML = '<p>Hello world today is fine.</p>';
+    await handleToggle();
+    const io = globalThis.__IntersectionObserverMock.instances[0];
+    io.triggerObserved();
+    await globalThis.__flushAsync();
+
+    const instance = await globalThis.__TranslatorMock.create.mock.results[0].value;
+    expect(__test.cache.has('Hello world today is fine.')).toBe(true);
+    instance.translate.mockClear();
+
+    // Add a second occurrence of the same sentence. MutationObserver picks it
+    // up and inserts a new loading; triggering IO drains it from the queue.
+    const extra = document.createElement('p');
+    extra.textContent = 'Hello world today is fine.';
+    document.body.appendChild(extra);
+    await globalThis.__flushAsync(10);
+
+    const newLoadings = document.querySelectorAll('.subtitler-loading');
+    expect(newLoadings.length).toBe(1);
+    io.trigger(newLoadings[0]);
+    await globalThis.__flushAsync();
+
+    expect(instance.translate).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('.subtitler-ja').length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// replaceLoadingWithTranslation
+// ---------------------------------------------------------------------------
+describe('replaceLoadingWithTranslation', () => {
+  it('replaces a loading span with a subtitler-ja span', () => {
+    document.body.innerHTML =
+      '<p><span id="l" class="subtitler-loading" data-subtitler-injected="true">Translating...</span></p>';
+    state.visible = true;
+    replaceLoadingWithTranslation(document.getElementById('l'), 'こんにちは');
+    expect(document.querySelector('.subtitler-loading')).toBeNull();
+    const ja = document.querySelector('.subtitler-ja');
+    expect(ja).not.toBeNull();
+    expect(ja.textContent).toBe('こんにちは');
+    expect(ja.dataset.subtitlerInjected).toBe('true');
+  });
+
+  it('hides the new ja span when state.visible is false', () => {
+    document.body.innerHTML =
+      '<p><span id="l" class="subtitler-loading" data-subtitler-injected="true">Translating...</span></p>';
+    state.visible = false;
+    replaceLoadingWithTranslation(document.getElementById('l'), 'こんにちは');
+    expect(document.querySelector('.subtitler-ja').style.display).toBe('none');
+  });
+
+  it('is a no-op for a detached loading element', () => {
+    const detached = document.createElement('span');
+    detached.className = 'subtitler-loading';
+    replaceLoadingWithTranslation(detached, 'こんにちは');
+    expect(document.querySelector('.subtitler-ja')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Idempotency / regression coverage
+// ---------------------------------------------------------------------------
+describe('idempotent re-scan (regression)', () => {
+  it('does not duplicate subtitles when collectAndInject is called twice on the same root', () => {
+    document.body.innerHTML = '<p>Hello world today. Goodbye for now everyone.</p>';
+    state.visible = true;
+    collectAndInject(document.body);
+    const before = document.querySelectorAll('.subtitler-loading').length;
+    collectAndInject(document.body);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(before);
+  });
+
+  it('does not duplicate when a translated subtree is reparented', () => {
+    document.body.innerHTML =
+      '<div id="src"><p>Hello world today. Another sentence here please.</p></div><div id="dst"></div>';
+    state.visible = true;
+    collectAndInject(document.body);
+    const before = document.querySelectorAll('.subtitler-loading').length;
+
+    const p = document.querySelector('#src p');
+    document.getElementById('dst').appendChild(p);
+    // Simulate the MutationObserver pathway calling collectAndInject on the
+    // moved subtree.
+    collectAndInject(p);
+
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(before);
+  });
+});
+
+describe('<option> regression', () => {
+  it('skips long-text options unconditionally', () => {
+    document.body.innerHTML =
+      '<select><option>Please select your preferred delivery method below today</option></select>';
+    state.visible = true;
+    collectAndInject(document.body);
+    const optionSpans = document
+      .querySelector('option')
+      .querySelectorAll('.subtitler-loading, .subtitler-ja');
+    expect(optionSpans.length).toBe(0);
+  });
+
+  it('skips OPTGROUP descendants', () => {
+    document.body.innerHTML =
+      '<select><optgroup label="g"><option>Please pick your preferred delivery method below.</option></optgroup></select>';
+    state.visible = true;
+    collectAndInject(document.body);
+    expect(
+      document.querySelectorAll('.subtitler-loading').length
+    ).toBe(0);
+  });
+});

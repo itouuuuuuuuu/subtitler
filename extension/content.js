@@ -56,15 +56,17 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // Fallback shortcut handler: chrome.commands sometimes fails to wake the
 // service worker (notably in Arc), so capture the key directly in the page.
-const IS_MAC = /mac|iphone|ipad|ipod/i.test(
-  navigator.userAgentData?.platform || navigator.platform || ''
-);
+function isOnMac() {
+  return /mac|iphone|ipad|ipod/i.test(
+    navigator.userAgentData?.platform || navigator.platform || ''
+  );
+}
 
 function isToggleShortcut(e) {
   if (typeof e.key !== 'string') return false;
   if (e.key.toLowerCase() !== 'y') return false;
   if (!e.shiftKey || e.altKey) return false;
-  return IS_MAC
+  return isOnMac()
     ? e.metaKey && !e.ctrlKey
     : e.ctrlKey && !e.metaKey;
 }
@@ -318,7 +320,7 @@ function collectAndInject(root) {
           if (p.dataset && p.dataset.subtitlerInjected === 'true') {
             return NodeFilter.FILTER_REJECT;
           }
-          if (p.isContentEditable) return NodeFilter.FILTER_REJECT;
+          if (isContentEditableNode(p)) return NodeFilter.FILTER_REJECT;
           p = p.parentElement;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -344,10 +346,18 @@ function collectFromTextNode(textNode) {
   while (p) {
     if (SKIP_TAGS.has(p.tagName)) return 0;
     if (p.dataset && p.dataset.subtitlerInjected === 'true') return 0;
-    if (p.isContentEditable) return 0;
+    if (isContentEditableNode(p)) return 0;
     p = p.parentElement;
   }
   return processTextNode(textNode);
+}
+
+function isContentEditableNode(el) {
+  // Browsers expose .isContentEditable, which considers inheritance. jsdom
+  // does not implement it, so fall back to the attribute for testability.
+  if (el.isContentEditable) return true;
+  const attr = el.getAttribute && el.getAttribute('contenteditable');
+  return attr === 'true' || attr === 'plaintext-only';
 }
 
 function processTextNode(textNode) {
@@ -502,4 +512,58 @@ function showDownloadBanner(onDownload, onCancel) {
 
 function hideBanner() {
   document.getElementById('subtitler-banner')?.remove();
+}
+
+// Test-only exports. The condition is satisfied in Node (CommonJS) but not in
+// the browser (where `module` is undefined), so this has no effect on the
+// extension at runtime.
+if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
+  module.exports = {
+    handleToggle,
+    isOnMac,
+    isToggleShortcut,
+    shouldTranslate,
+    hasLatinLetter,
+    setVisibility,
+    processTextNode,
+    collectAndInject,
+    collectFromTextNode,
+    replaceLoadingWithTranslation,
+    runTranslation,
+    drainQueue,
+    SKIP_TAGS,
+    BUTTON_LIKE_TAGS,
+    BUTTON_LIKE_ROLES,
+    state,
+    __test: {
+      get translator() { return translator; },
+      set translator(v) { translator = v; },
+      get translatorPromise() { return translatorPromise; },
+      set translatorPromise(v) { translatorPromise = v; },
+      get intersectionObserver() { return intersectionObserver; },
+      get mutationObserver() { return mutationObserver; },
+      get queue() { return queue; },
+      get cache() { return cache; },
+      reset() {
+        cache.clear();
+        queue.length = 0;
+        state.injected = false;
+        state.visible = false;
+        state.running = false;
+        translator = null;
+        translatorPromise = null;
+        if (intersectionObserver && typeof intersectionObserver.disconnect === 'function') {
+          intersectionObserver.disconnect();
+        }
+        if (mutationObserver && typeof mutationObserver.disconnect === 'function') {
+          mutationObserver.disconnect();
+        }
+        intersectionObserver = null;
+        mutationObserver = null;
+        activeTranslations = 0;
+        mutationPending.length = 0;
+        mutationScheduled = false;
+      },
+    },
+  };
 }
