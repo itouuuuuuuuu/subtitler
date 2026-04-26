@@ -401,6 +401,41 @@ describe('handleToggle', () => {
 });
 
 // ---------------------------------------------------------------------------
+// SPA navigation: stale state.injected after the previous page's nodes
+// have been swapped out of the DOM.
+// ---------------------------------------------------------------------------
+describe('handleToggle after SPA navigation (stale injection state)', () => {
+  it('treats the page as fresh when injected nodes are gone from the DOM', async () => {
+    document.body.innerHTML = '<p>Hello world today. Another sentence here please.</p>';
+    await handleToggle();
+    expect(state.injected).toBe(true);
+
+    // Simulate SPA navigation: a brand-new tree replaces the previous body.
+    document.body.innerHTML = '<p>A second page with new translatable text here.</p>';
+    expect(document.querySelectorAll('[data-subtitler-injected="true"]').length).toBe(0);
+
+    await handleToggle();
+    expect(state.injected).toBe(true);
+    expect(state.visible).toBe(true);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBeGreaterThan(0);
+  });
+
+  it('does not get stuck hidden if the user had toggled off before navigating', async () => {
+    document.body.innerHTML = '<p>Hello world today. Another sentence here please.</p>';
+    await handleToggle();   // on
+    await handleToggle();   // off
+    expect(state.visible).toBe(false);
+
+    document.body.innerHTML = '<p>A second page with new translatable text here.</p>';
+    await handleToggle();   // should be ON again on the new page
+    expect(state.visible).toBe(true);
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    expect(loadings.length).toBeGreaterThan(0);
+    for (const el of loadings) expect(el.style.display).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // IntersectionObserver-driven lazy translation
 // ---------------------------------------------------------------------------
 describe('lazy translation via IntersectionObserver', () => {

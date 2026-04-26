@@ -85,6 +85,13 @@ window.addEventListener(
 
 async function handleToggle() {
   if (state.running) return;
+  // SPA navigation can leave state.injected=true while the actual injected
+  // nodes have been swapped out of the document. Treat the page as fresh so
+  // the next press translates instead of silently no-op'ing.
+  if (state.injected && !hasLiveInjections()) {
+    state.injected = false;
+    state.visible = false;
+  }
   if (state.injected) {
     state.visible = !state.visible;
     setVisibility(state.visible);
@@ -114,6 +121,10 @@ function setVisibility(visible) {
     .forEach((el) => {
       el.style.display = display;
     });
+}
+
+function hasLiveInjections() {
+  return !!document.querySelector('[data-subtitler-injected="true"]');
 }
 
 async function ensureTranslator() {
