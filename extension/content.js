@@ -1,9 +1,12 @@
 const SKIP_TAGS = new Set([
   'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE',
   'CODE', 'PRE', 'TEXTAREA', 'INPUT', 'KBD', 'SAMP', 'VAR',
+  // Form controls whose text is the submitted value or a label attribute;
+  // injecting child spans into <option> would corrupt form submissions.
+  'SELECT', 'OPTION', 'OPTGROUP',
 ]);
 
-const BUTTON_LIKE_TAGS = new Set(['A', 'LABEL', 'SUMMARY', 'OPTION']);
+const BUTTON_LIKE_TAGS = new Set(['A', 'LABEL', 'SUMMARY']);
 const BUTTON_LIKE_ROLES = new Set([
   'button', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio',
   'option', 'link', 'switch', 'checkbox', 'radio',
@@ -18,6 +21,11 @@ const MUTATION_BATCH_DELAY = 100;
 const cache = new Map();
 const queue = [];
 const ownInsertions = new WeakSet();
+// Text nodes we have already passed through processTextNode. Walker rejects
+// these so that re-scans (e.g. when a SPA reparents an existing subtree, or
+// when the very first toggle injected nothing and MutationObserver later
+// added content) do not insert duplicate subtitles.
+const processedTextNodes = new WeakSet();
 const state = {
   injected: false,
   visible: false,
@@ -300,6 +308,7 @@ function collectAndInject(root) {
     NodeFilter.SHOW_TEXT,
     {
       acceptNode(node) {
+        if (processedTextNodes.has(node)) return NodeFilter.FILTER_REJECT;
         if (!node.textContent || !node.textContent.trim()) {
           return NodeFilter.FILTER_REJECT;
         }
@@ -330,6 +339,7 @@ function collectAndInject(root) {
 
 function collectFromTextNode(textNode) {
   if (!textNode.parentNode) return 0;
+  if (processedTextNodes.has(textNode)) return 0;
   let p = textNode.parentElement;
   while (p) {
     if (SKIP_TAGS.has(p.tagName)) return 0;
@@ -343,13 +353,20 @@ function collectFromTextNode(textNode) {
 function processTextNode(textNode) {
   if (!textNode.parentNode) return 0;
   const text = textNode.textContent;
-  if (!hasLatinLetter(text)) return 0;
+  if (!hasLatinLetter(text)) {
+    processedTextNodes.add(textNode);
+    return 0;
+  }
 
   const segments = [...segmenter.segment(text)];
-  if (segments.length === 0) return 0;
+  if (segments.length === 0) {
+    processedTextNodes.add(textNode);
+    return 0;
+  }
 
   const fragment = document.createDocumentFragment();
   const newNodes = [];
+  const newTextNodes = [];
   const loadings = [];
 
   for (const seg of segments) {
@@ -358,6 +375,7 @@ function processTextNode(textNode) {
     const tn = document.createTextNode(original);
     fragment.appendChild(tn);
     newNodes.push(tn);
+    newTextNodes.push(tn);
 
     if (!trimmed || !hasLatinLetter(trimmed)) continue;
     if (!shouldTranslate(trimmed, textNode.parentElement)) continue;
@@ -373,13 +391,21 @@ function processTextNode(textNode) {
     loadings.push(loading);
   }
 
-  if (loadings.length === 0) return 0;
+  if (loadings.length === 0) {
+    processedTextNodes.add(textNode);
+    return 0;
+  }
 
   for (const n of newNodes) ownInsertions.add(n);
+  for (const tn of newTextNodes) processedTextNodes.add(tn);
   textNode.parentNode.replaceChild(fragment, textNode);
   if (intersectionObserver) {
     for (const l of loadings) intersectionObserver.observe(l);
   }
+  // Mark globally so that a later toggle does not re-walk the document and
+  // duplicate subtitles. This matters when the very first toggle injected
+  // nothing and MutationObserver added content afterwards.
+  state.injected = true;
   return loadings.length;
 }
 
