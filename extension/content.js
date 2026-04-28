@@ -634,7 +634,12 @@ function liftLoadingFromTrailingAnchor(loading) {
 }
 
 function hasMeaningfulContent(node) {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent.length > 0;
+  // Whitespace-only text nodes must not block the lift: SPA frameworks often
+  // render a link skeleton like `<a> </a>` first (whose " " gets marked
+  // processed) and then drop the real body in. Without trimming here, the
+  // trailing whitespace would force the loading to stay inside <a> after the
+  // body is inserted, re-introducing the click-area regression Fix 3 closed.
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent.trim().length > 0;
   if (node.nodeType !== Node.ELEMENT_NODE) return false;
   if (node.dataset && node.dataset.subtitlerInjected === 'true') return false;
   for (const child of node.childNodes) {

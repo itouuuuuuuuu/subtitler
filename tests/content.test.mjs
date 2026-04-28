@@ -566,6 +566,29 @@ describe('collectAndInject (regression coverage)', () => {
     );
   });
 
+  it('lifts the loading even when only whitespace follows it inside <a>', () => {
+    // Mirrors the SPA pattern where a link skeleton is rendered with a
+    // whitespace-only child first, that whitespace gets marked processed,
+    // and the body is dropped in afterwards. The trailing whitespace must
+    // not block the lift, otherwise the subtitle stays a child of <a> and
+    // the click-area regression returns.
+    document.body.innerHTML = '<p id="p">Please visit <a id="link"> </a></p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+
+    const link = document.getElementById('link');
+    const body = document.createTextNode(
+      'the comprehensive documentation page available right now today please'
+    );
+    link.insertBefore(body, link.firstChild);
+
+    processBlock(document.getElementById('p'));
+    const loading = document.querySelector('.subtitler-loading');
+    expect(loading).not.toBeNull();
+    expect(link.contains(loading)).toBe(false);
+  });
+
   it('treats already-processed text nodes as run boundaries when re-walking', () => {
     // Simulates a MutationObserver delivering a fresh prefix and suffix on
     // either side of a previously-translated middle text node. Without
