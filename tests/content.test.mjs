@@ -11,8 +11,10 @@ const {
   isToggleShortcut,
   shouldTranslate,
   hasLatinLetter,
+  isAddressLike,
   setVisibility,
   processTextNode,
+  processBlock,
   collectAndInject,
   collectFromTextNode,
   replaceLoadingWithTranslation,
@@ -33,6 +35,33 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
+describe('isAddressLike', () => {
+  it('detects http(s) and ftp URLs', () => {
+    expect(isAddressLike('https://example.com')).toBe(true);
+    expect(isAddressLike('http://example.com/path?q=1')).toBe(true);
+    expect(isAddressLike('ftp://files.example.com/x')).toBe(true);
+  });
+
+  it('detects www. and bare domains', () => {
+    expect(isAddressLike('www.example.com')).toBe(true);
+    expect(isAddressLike('docs.example.com/path')).toBe(true);
+    expect(isAddressLike('example.com')).toBe(true);
+  });
+
+  it('rejects strings containing whitespace (real prose)', () => {
+    expect(isAddressLike('https://example.com is great')).toBe(false);
+    expect(isAddressLike('Visit example.com')).toBe(false);
+    expect(isAddressLike('Read more docs')).toBe(false);
+  });
+
+  it('rejects empty / non-URL tokens', () => {
+    expect(isAddressLike('')).toBe(false);
+    expect(isAddressLike('   ')).toBe(false);
+    expect(isAddressLike('hello')).toBe(false);
+    expect(isAddressLike('Click')).toBe(false);
+  });
+});
+
 describe('hasLatinLetter', () => {
   it('returns true when Latin letters are present', () => {
     expect(hasLatinLetter('Hello')).toBe(true);
@@ -166,6 +195,25 @@ describe('shouldTranslate', () => {
     const span = document.getElementById('s');
     expect(shouldTranslate('See more details please.', span)).toBe(false);
   });
+
+  it('rejects URL-like link text inside <a> regardless of length', () => {
+    // Defensive: a sentence-shaped URL shouldn't slip through even if it
+    // somehow passes the word-count thresholds.
+    document.body.innerHTML = '<a href="#"><span id="s">x</span></a>';
+    const span = document.getElementById('s');
+    // 1-word URL is rejected by MIN_WORD_COUNT, but isAddressLike is the
+    // explicit guard for any future loosening of those thresholds.
+    expect(shouldTranslate('https://example.com', span)).toBe(false);
+    expect(shouldTranslate('docs.example.com/very/long/path', span)).toBe(false);
+  });
+
+  it('translates wording link text once it clears the short-link threshold', () => {
+    document.body.innerHTML = '<a href="#"><span id="s">x</span></a>';
+    const span = document.getElementById('s');
+    expect(
+      shouldTranslate('Read the full documentation here today please', span)
+    ).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -253,6 +301,243 @@ describe('processTextNode', () => {
   it('returns 0 for an orphan text node (no parentNode)', () => {
     const orphan = document.createTextNode('Hello world today.');
     expect(processTextNode(orphan)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// processBlock — inline-spanning sentence aggregation
+// ---------------------------------------------------------------------------
+describe('processBlock (inline-spanning aggregation)', () => {
+  it('aggregates a sentence split by an <a> into a single loading after the tail', () => {
+    document.body.innerHTML =
+      '<p id="p">For more information, visit the <a href="#">Amazon EC2 M8i instance</a> page.</p>';
+    state.visible = true;
+    const p = document.getElementById('p');
+    const count = processBlock(p);
+    expect(count).toBe(1);
+    const loadings = p.querySelectorAll('.subtitler-loading');
+    expect(loadings.length).toBe(1);
+    expect(loadings[0].dataset.subtitlerSentence).toBe(
+      'For more information, visit the Amazon EC2 M8i instance page.'
+    );
+    // The loading should appear after the link, not inside it.
+    expect(p.querySelector('a').contains(loadings[0])).toBe(false);
+    // The link's anchor text must be preserved verbatim.
+    expect(p.querySelector('a').textContent).toBe('Amazon EC2 M8i instance');
+  });
+
+  it('aggregates across an inline <em>', () => {
+    document.body.innerHTML =
+      '<p id="p">This is <em>great</em> news for the team today.</p>';
+    state.visible = true;
+    const p = document.getElementById('p');
+    const count = processBlock(p);
+    expect(count).toBe(1);
+    expect(p.querySelectorAll('.subtitler-loading').length).toBe(1);
+  });
+
+  it('does not translate a standalone <a> that is just a URL', () => {
+    document.body.innerHTML = '<p id="p"><a href="https://example.com">https://example.com</a></p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('keeps the existing short-link threshold for standalone wording links', () => {
+    document.body.innerHTML = '<p id="p"><a href="#">Read the docs</a></p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('translates a long enough standalone wording link', () => {
+    document.body.innerHTML =
+      '<p id="p"><a href="#">Read the full documentation here today please</a></p>';
+    state.visible = true;
+    const count = processBlock(document.getElementById('p'));
+    expect(count).toBe(1);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(1);
+  });
+
+  it('translates the surrounding sentence even when it embeds a URL link', () => {
+    document.body.innerHTML =
+      '<p id="p">For details please visit <a href="https://example.com">https://example.com</a> today.</p>';
+    state.visible = true;
+    const p = document.getElementById('p');
+    const count = processBlock(p);
+    expect(count).toBe(1);
+    const loadings = p.querySelectorAll('.subtitler-loading');
+    expect(loadings.length).toBe(1);
+    expect(loadings[0].dataset.subtitlerSentence).toContain('https://example.com');
+    // URL-as-link-text is preserved exactly.
+    expect(p.querySelector('a').textContent).toBe('https://example.com');
+  });
+
+  it('does not merge prose across a nested block boundary', () => {
+    document.body.innerHTML =
+      '<div id="d">Hello world today. <p>Different paragraph entirely here.</p> Goodbye for now everyone.</div>';
+    state.visible = true;
+    processBlock(document.getElementById('d'));
+    // Three separate sentences -> three loadings, not aggregated across <p>.
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(3);
+  });
+
+  it('rejects sentence-spanning aggregation inside <button>', () => {
+    document.body.innerHTML =
+      '<button id="b">Click <span>here</span> to submit now please.</button>';
+    state.visible = true;
+    processBlock(document.getElementById('b'));
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Codex review regressions
+// ---------------------------------------------------------------------------
+describe('processBlock (regression coverage)', () => {
+  it('does not concatenate prose across an inline SKIP_TAG element', () => {
+    // Without the run-flush fix, "Use the " and " command today please." were
+    // joined as "Use the  command today please." with the <code> content
+    // silently dropped from the translation input.
+    document.body.innerHTML =
+      '<p id="p">Use the <code>aws ec2</code> command today please.</p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    // The <code> body must be preserved verbatim.
+    expect(document.querySelector('code').textContent).toBe('aws ec2');
+    // Whatever sentences we queued, none of them may contain the corrupted
+    // "Use the  command" form.
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    for (const l of loadings) {
+      expect(l.dataset.subtitlerSentence).not.toMatch(/Use the\s{2,}command/);
+    }
+  });
+
+  it('does not concatenate words across <br>', () => {
+    document.body.innerHTML = '<p id="p">Hello<br>world today everyone.</p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    for (const l of loadings) {
+      expect(l.dataset.subtitlerSentence).not.toContain('Helloworld');
+    }
+  });
+
+  it('keeps the standalone-link short filter when only punctuation lies outside <a>', () => {
+    // Without the meaningful-segments fix, the trailing period would pull the
+    // common ancestor up to <p>, hiding the <a> from shouldTranslate's walk
+    // and translating a 3-word UI label.
+    document.body.innerHTML = '<p id="p"><a href="#">Read more docs</a>.</p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('still translates an in-prose link followed by trailing punctuation', () => {
+    document.body.innerHTML =
+      '<p id="p">For more information, visit the <a href="#">Amazon EC2 instance</a>.</p>';
+    state.visible = true;
+    const count = processBlock(document.getElementById('p'));
+    expect(count).toBe(1);
+    const loading = document.querySelector('.subtitler-loading');
+    expect(loading.dataset.subtitlerSentence).toBe(
+      'For more information, visit the Amazon EC2 instance.'
+    );
+  });
+});
+
+describe('collectAndInject (regression coverage)', () => {
+  it('reprocesses the parent block when MutationObserver receives an added inline element', () => {
+    document.body.innerHTML =
+      '<p id="p">For more information, visit the <a id="a" href="#">Amazon EC2 M8i instance</a> page.</p>';
+    state.visible = true;
+
+    const count = collectAndInject(document.getElementById('a'));
+
+    expect(count).toBe(1);
+    const p = document.getElementById('p');
+    const loading = p.querySelector('.subtitler-loading');
+    expect(loading).not.toBeNull();
+    expect(loading.dataset.subtitlerSentence).toBe(
+      'For more information, visit the Amazon EC2 M8i instance page.'
+    );
+    expect(p.querySelector('a').contains(loading)).toBe(false);
+    expect(p.querySelector('a').textContent).toBe('Amazon EC2 M8i instance');
+  });
+
+  it('defers an added inline element until later tail text completes the sentence', () => {
+    document.body.innerHTML =
+      '<p id="p">For more information, visit the </p>';
+    state.visible = true;
+    const p = document.getElementById('p');
+    const link = document.createElement('a');
+    link.id = 'a';
+    link.href = '#';
+    link.textContent = 'Amazon EC2 M8i instance';
+    p.appendChild(link);
+
+    expect(collectAndInject(link)).toBe(0);
+    expect(p.querySelectorAll('.subtitler-loading').length).toBe(0);
+
+    const tail = document.createTextNode(' page.');
+    p.appendChild(tail);
+
+    expect(collectFromTextNode(tail)).toBe(1);
+    const loading = p.querySelector('.subtitler-loading');
+    expect(loading.dataset.subtitlerSentence).toBe(
+      'For more information, visit the Amazon EC2 M8i instance page.'
+    );
+  });
+
+  it('keeps staged MutationObserver text unprocessed until the sentence is complete', () => {
+    document.body.innerHTML = '<p id="p"></p>';
+    state.visible = true;
+    const p = document.getElementById('p');
+    const prefix = document.createTextNode('For more information, visit the ');
+    p.appendChild(prefix);
+
+    expect(collectFromTextNode(prefix, { deferIncompleteFinal: true })).toBe(0);
+
+    const link = document.createElement('a');
+    link.href = '#';
+    link.textContent = 'Amazon EC2 M8i instance';
+    p.appendChild(link);
+
+    expect(collectAndInject(link)).toBe(0);
+
+    const tail = document.createTextNode(' page.');
+    p.appendChild(tail);
+
+    expect(collectFromTextNode(tail, { deferIncompleteFinal: true })).toBe(1);
+    expect(p.querySelector('.subtitler-loading').dataset.subtitlerSentence).toBe(
+      'For more information, visit the Amazon EC2 M8i instance page.'
+    );
+  });
+
+  it('rejects an element added inside a SKIP_TAG ancestor', () => {
+    // Simulates MutationObserver receiving a freshly-added <span> that lives
+    // inside an existing <code>. The new pipeline must walk ancestors so the
+    // span is not processed.
+    document.body.innerHTML = '<pre><code><span id="s">aws ec2 describe-instances</span></code></pre>';
+    state.visible = true;
+    expect(collectAndInject(document.getElementById('s'))).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('rejects an element added inside a contenteditable ancestor', () => {
+    document.body.innerHTML =
+      '<div contenteditable="true"><p id="p">Hello world today is fine.</p></div>';
+    state.visible = true;
+    expect(collectAndInject(document.getElementById('p'))).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('rejects an element added inside an already-injected ancestor', () => {
+    document.body.innerHTML =
+      '<div data-subtitler-injected="true"><p id="p">Hello world today is fine.</p></div>';
+    state.visible = true;
+    expect(collectAndInject(document.getElementById('p'))).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
   });
 });
 

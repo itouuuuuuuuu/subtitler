@@ -12,6 +12,20 @@ const BUTTON_LIKE_ROLES = new Set([
   'option', 'link', 'switch', 'checkbox', 'radio',
 ]);
 
+// Block-level boundaries used when aggregating inline-spanning sentences.
+// Anything not in this set (and not in SKIP_TAGS) is treated as inline and its
+// text contributes to the parent block's flat sentence buffer.
+const BLOCK_TAGS = new Set([
+  'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'BODY', 'BR', 'BUTTON',
+  'CAPTION', 'DD', 'DETAILS', 'DIALOG', 'DIV', 'DL', 'DT',
+  'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM',
+  'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+  'HEADER', 'HGROUP', 'HR', 'HTML', 'LABEL', 'LI', 'MAIN',
+  'NAV', 'OL', 'P', 'SECTION', 'SUMMARY',
+  'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TR',
+  'UL',
+]);
+
 const MIN_WORD_COUNT = 3;
 const SHORT_LINK_WORD_THRESHOLD = 6;
 const MAX_CONCURRENCY = 4;
@@ -272,7 +286,7 @@ function processMutations() {
     if (node.nodeType === Node.ELEMENT_NODE) {
       collectAndInject(node);
     } else if (node.nodeType === Node.TEXT_NODE) {
-      collectFromTextNode(node);
+      collectFromTextNode(node, { deferIncompleteFinal: true });
     }
   }
 }
@@ -306,51 +320,31 @@ async function translateOne({ loading, sentence }) {
   }
 }
 
-function collectAndInject(root) {
+function collectAndInject(root, options = {}) {
   if (!root || !root.nodeType) return 0;
-  if (
-    root.nodeType === Node.ELEMENT_NODE &&
-    (SKIP_TAGS.has(root.tagName) || root.dataset?.subtitlerInjected === 'true')
-  ) {
-    return 0;
-  }
-
-  let injected = 0;
-  const walker = document.createTreeWalker(
-    root,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode(node) {
-        if (processedTextNodes.has(node)) return NodeFilter.FILTER_REJECT;
-        if (!node.textContent || !node.textContent.trim()) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        let p = node.parentElement;
-        while (p) {
-          if (SKIP_TAGS.has(p.tagName)) return NodeFilter.FILTER_REJECT;
-          if (p.dataset && p.dataset.subtitlerInjected === 'true') {
-            return NodeFilter.FILTER_REJECT;
-          }
-          if (isContentEditableNode(p)) return NodeFilter.FILTER_REJECT;
-          p = p.parentElement;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    if (SKIP_TAGS.has(root.tagName)) return 0;
+    if (root.dataset?.subtitlerInjected === 'true') return 0;
+    if (isContentEditableNode(root)) return 0;
+    // MutationObserver may hand us a freshly-added element that is itself
+    // benign but lives inside an excluded subtree (a code highlighter span
+    // appearing inside <code>, a node added inside a contenteditable region,
+    // a sub-element of an already-translated subtitler block). Walk the
+    // ancestor chain so we don't drop translation spans into those.
+    let p = root.parentElement;
+    while (p) {
+      if (SKIP_TAGS.has(p.tagName)) return 0;
+      if (p.dataset && p.dataset.subtitlerInjected === 'true') return 0;
+      if (isContentEditableNode(p)) return 0;
+      p = p.parentElement;
     }
-  );
-
-  const targets = [];
-  let node;
-  while ((node = walker.nextNode())) {
-    targets.push(node);
   }
-  for (const textNode of targets) {
-    injected += processTextNode(textNode);
-  }
-  return injected;
+  return processBlock(processingBlockFor(root), {
+    deferIncompleteFinal: shouldDeferIncompleteFinal(root, options),
+  });
 }
 
-function collectFromTextNode(textNode) {
+function collectFromTextNode(textNode, options = {}) {
   if (!textNode.parentNode) return 0;
   if (processedTextNodes.has(textNode)) return 0;
   let p = textNode.parentElement;
@@ -360,78 +354,258 @@ function collectFromTextNode(textNode) {
     if (isContentEditableNode(p)) return 0;
     p = p.parentElement;
   }
-  return processTextNode(textNode);
+  return processBlock(processingBlockFor(textNode), {
+    deferIncompleteFinal: options.deferIncompleteFinal === true,
+  });
+}
+
+function processingBlockFor(node) {
+  const fallback =
+    node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  let block = fallback;
+  while (block && !BLOCK_TAGS.has(block.tagName)) {
+    block = block.parentElement;
+  }
+  return block || fallback;
+}
+
+function shouldDeferIncompleteFinal(root, options) {
+  if (typeof options.deferIncompleteFinal === 'boolean') {
+    return options.deferIncompleteFinal;
+  }
+  return root.nodeType === Node.ELEMENT_NODE && !BLOCK_TAGS.has(root.tagName);
 }
 
 function isContentEditableNode(el) {
+  if (!el || !el.getAttribute) return false;
   // Browsers expose .isContentEditable, which considers inheritance. jsdom
   // does not implement it, so fall back to the attribute for testability.
   if (el.isContentEditable) return true;
-  const attr = el.getAttribute && el.getAttribute('contenteditable');
+  const attr = el.getAttribute('contenteditable');
   return attr === 'true' || attr === 'plaintext-only';
 }
 
-function processTextNode(textNode) {
-  if (!textNode.parentNode) return 0;
-  const text = textNode.textContent;
-  if (!hasLatinLetter(text)) {
-    processedTextNodes.add(textNode);
+// Walk a block element, splitting its inline content into "runs" of adjacent
+// text nodes. A nested block boundary flushes the current run so that
+// sentence aggregation never crosses a block break (e.g. a <p> embedded in a
+// <div> never merges its prose with the surrounding div text).
+function processBlock(block, options = {}) {
+  if (!block) return 0;
+  let total = 0;
+  let currentRun = [];
+
+  function flushRun() {
+    if (currentRun.length === 0) return;
+    total += processRun(currentRun, options);
+    currentRun = [];
+  }
+
+  function visit(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (!processedTextNodes.has(node)) currentRun.push(node);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    // Anything we don't translate must still break the surrounding sentence
+    // run, otherwise the text on either side gets concatenated by join('')
+    // and the translator receives a corrupted sentence with the skipped
+    // content silently elided (e.g. `<code>aws ec2</code>` between two prose
+    // halves would produce "Use the  command today please.").
+    if (
+      SKIP_TAGS.has(node.tagName) ||
+      (node.dataset && node.dataset.subtitlerInjected === 'true') ||
+      isContentEditableNode(node)
+    ) {
+      flushRun();
+      return;
+    }
+    if (BLOCK_TAGS.has(node.tagName)) {
+      flushRun();
+      total += processBlock(node, options);
+      return;
+    }
+    for (const child of node.childNodes) visit(child);
+  }
+
+  for (const child of block.childNodes) visit(child);
+  flushRun();
+  return total;
+}
+
+// Process a contiguous run of inline-adjacent text nodes as a single sentence
+// stream. The flat text is segmented across the run, and each translatable
+// sentence inserts a loading span at the offset where it ends — even if that
+// offset lies in a different text node from where the sentence began.
+function processRun(textNodes, options = {}) {
+  const fresh = textNodes.filter(
+    (n) => n.parentNode && !processedTextNodes.has(n) && n.textContent
+  );
+  if (fresh.length === 0) return 0;
+
+  const segments = [];
+  let cursor = 0;
+  for (const node of fresh) {
+    const len = node.textContent.length;
+    segments.push({ start: cursor, end: cursor + len, node });
+    cursor += len;
+  }
+  const flatText = segments.map((s) => s.node.textContent).join('');
+
+  if (!hasLatinLetter(flatText)) {
+    for (const s of segments) processedTextNodes.add(s.node);
     return 0;
   }
 
-  const segments = [...segmenter.segment(text)];
-  if (segments.length === 0) {
-    processedTextNodes.add(textNode);
+  const sentences = [...segmenter.segment(flatText)];
+  if (sentences.length === 0) {
+    for (const s of segments) processedTextNodes.add(s.node);
     return 0;
   }
 
-  const fragment = document.createDocumentFragment();
-  const newNodes = [];
-  const newTextNodes = [];
-  const loadings = [];
+  // Per-segment list of insertion points (offset within the text node) and
+  // the sentence string to attach there. We collect everything before mutating
+  // the DOM so DOM surgery happens once per text node.
+  const insertionsBySegment = new Map();
+  for (const s of segments) insertionsBySegment.set(s, []);
+
+  let count = 0;
+  const deferredSegments = new Set();
+  for (const sent of sentences) {
+    const start = sent.index;
+    const end = start + sent.segment.length;
+    const trimmed = sent.segment.trim();
+    if (!trimmed || !hasLatinLetter(trimmed)) continue;
+
+    const covered = segments.filter((s) => s.end > start && s.start < end);
+    if (covered.length === 0) continue;
+    if (
+      options.deferIncompleteFinal &&
+      isTrailingIncompleteSentence(sent, flatText)
+    ) {
+      for (const s of covered) deferredSegments.add(s);
+      continue;
+    }
+
+    // For ancestor-based rules (e.g. the standalone-link short-text filter),
+    // ignore covered segments that contribute only punctuation/whitespace.
+    // Otherwise `<a>Read more docs</a>.` would resolve to the surrounding
+    // <p> and bypass the link-specific filter.
+    const meaningful = covered.filter((s) => hasLatinLetter(s.node.textContent));
+    const ancestorSource = meaningful.length > 0 ? meaningful : covered;
+    const ancestor = commonAncestorElement(ancestorSource.map((s) => s.node));
+    if (!shouldTranslate(trimmed, ancestor)) continue;
+
+    // Find the segment containing the sentence's exclusive end position.
+    let endSeg = null;
+    for (const s of segments) {
+      if (end > s.start && end <= s.end) {
+        endSeg = s;
+        break;
+      }
+    }
+    if (!endSeg) continue;
+
+    const offsetInNode = end - endSeg.start;
+    insertionsBySegment.get(endSeg).push({ offset: offsetInNode, sentence: trimmed });
+    count++;
+  }
 
   for (const seg of segments) {
-    const original = seg.segment;
-    const trimmed = original.trim();
-    const tn = document.createTextNode(original);
-    fragment.appendChild(tn);
-    newNodes.push(tn);
-    newTextNodes.push(tn);
+    const inserts = insertionsBySegment.get(seg);
+    if (inserts.length === 0) {
+      if (!deferredSegments.has(seg)) processedTextNodes.add(seg.node);
+      continue;
+    }
+    inserts.sort((a, b) => a.offset - b.offset);
+    applyInsertions(seg.node, inserts);
+  }
 
-    if (!trimmed || !hasLatinLetter(trimmed)) continue;
-    if (!shouldTranslate(trimmed, textNode.parentElement)) continue;
+  if (count > 0) state.injected = true;
+  return count;
+}
 
+function isTrailingIncompleteSentence(segment, flatText) {
+  const end = segment.index + segment.segment.length;
+  if (end < flatText.length) return false;
+  return !/[.!?]["')\]]*$/.test(segment.segment.trim());
+}
+
+// Replace a single text node with a fragment that splices loading spans in at
+// the given offsets. Each offset corresponds to the *end* of one sentence; the
+// span is inserted immediately after that point.
+function applyInsertions(textNode, inserts) {
+  if (!textNode.parentNode) return;
+  const text = textNode.textContent;
+  const fragment = document.createDocumentFragment();
+  const newNodes = [];
+  const loadings = [];
+  let prev = 0;
+
+  for (const ins of inserts) {
+    const chunk = text.slice(prev, ins.offset);
+    if (chunk) {
+      const tn = document.createTextNode(chunk);
+      fragment.appendChild(tn);
+      newNodes.push(tn);
+      processedTextNodes.add(tn);
+    }
     const loading = document.createElement('span');
     loading.className = 'subtitler-loading';
     loading.dataset.subtitlerInjected = 'true';
-    loading.dataset.subtitlerSentence = trimmed;
+    loading.dataset.subtitlerSentence = ins.sentence;
     loading.textContent = 'Translating...';
     if (!state.visible) loading.style.display = 'none';
     fragment.appendChild(loading);
     newNodes.push(loading);
     loadings.push(loading);
+    prev = ins.offset;
   }
 
-  if (loadings.length === 0) {
-    processedTextNodes.add(textNode);
-    return 0;
+  const tail = text.slice(prev);
+  if (tail) {
+    const tn = document.createTextNode(tail);
+    fragment.appendChild(tn);
+    newNodes.push(tn);
+    processedTextNodes.add(tn);
   }
 
   for (const n of newNodes) ownInsertions.add(n);
-  for (const tn of newTextNodes) processedTextNodes.add(tn);
+  processedTextNodes.add(textNode);
   textNode.parentNode.replaceChild(fragment, textNode);
   if (intersectionObserver) {
     for (const l of loadings) intersectionObserver.observe(l);
   }
-  // Mark globally so that a later toggle does not re-walk the document and
-  // duplicate subtitles. This matters when the very first toggle injected
-  // nothing and MutationObserver added content afterwards.
-  state.injected = true;
-  return loadings.length;
+}
+
+function processTextNode(textNode) {
+  if (!textNode || !textNode.parentNode) return 0;
+  return processRun([textNode]);
 }
 
 function hasLatinLetter(text) {
   return /[A-Za-z]/.test(text);
+}
+
+function isAddressLike(text) {
+  const t = (text || '').trim();
+  if (!t) return false;
+  if (/\s/.test(t)) return false;
+  if (/^https?:\/\/\S+$/i.test(t)) return true;
+  if (/^ftp:\/\/\S+$/i.test(t)) return true;
+  if (/^www\.\S+\.\S+/i.test(t)) return true;
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(t)) return true;
+  return false;
+}
+
+function commonAncestorElement(nodes) {
+  if (!nodes || nodes.length === 0) return null;
+  let anc = nodes[0].parentElement;
+  for (let i = 1; i < nodes.length && anc; i++) {
+    while (anc && !anc.contains(nodes[i])) {
+      anc = anc.parentElement;
+    }
+  }
+  return anc;
 }
 
 function shouldTranslate(sentence, parentEl) {
@@ -439,11 +613,13 @@ function shouldTranslate(sentence, parentEl) {
   if (wordCount < MIN_WORD_COUNT) return false;
 
   let p = parentEl;
+  let insideAnchor = false;
   while (p && p !== document.body && p !== document.documentElement) {
     const role = p.getAttribute && p.getAttribute('role');
     if (p.tagName === 'BUTTON' || (role && BUTTON_LIKE_ROLES.has(role))) {
       return false;
     }
+    if (p.tagName === 'A') insideAnchor = true;
     if (
       BUTTON_LIKE_TAGS.has(p.tagName) &&
       wordCount < SHORT_LINK_WORD_THRESHOLD
@@ -452,6 +628,11 @@ function shouldTranslate(sentence, parentEl) {
     }
     p = p.parentElement;
   }
+
+  // Link text that is just a URL/address should never be translated, even if
+  // it would otherwise pass the word-count thresholds.
+  if (insideAnchor && isAddressLike(sentence)) return false;
+
   return true;
 }
 
@@ -535,8 +716,10 @@ if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     isToggleShortcut,
     shouldTranslate,
     hasLatinLetter,
+    isAddressLike,
     setVisibility,
     processTextNode,
+    processBlock,
     collectAndInject,
     collectFromTextNode,
     replaceLoadingWithTranslation,
@@ -545,6 +728,7 @@ if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     SKIP_TAGS,
     BUTTON_LIKE_TAGS,
     BUTTON_LIKE_ROLES,
+    BLOCK_TAGS,
     state,
     __test: {
       get translator() { return translator; },
