@@ -402,7 +402,16 @@ function processBlock(block, options = {}) {
 
   function visit(node) {
     if (node.nodeType === Node.TEXT_NODE) {
-      if (!processedTextNodes.has(node)) currentRun.push(node);
+      // A previously-processed text node already contributed its own
+      // translation segment. Treat it as a run boundary — concatenating
+      // the new text on either side of it would silently drop its content
+      // from the flat string and feed the translator a sentence with the
+      // middle elided.
+      if (processedTextNodes.has(node)) {
+        flushRun();
+      } else {
+        currentRun.push(node);
+      }
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -489,8 +498,15 @@ function processRun(textNodes, options = {}) {
     // For ancestor-based rules (e.g. the standalone-link short-text filter),
     // ignore covered segments that contribute only punctuation/whitespace.
     // Otherwise `<a>Read more docs</a>.` would resolve to the surrounding
-    // <p> and bypass the link-specific filter.
-    const meaningful = covered.filter((s) => hasLatinLetter(s.node.textContent));
+    // <p> and bypass the link-specific filter. Use the slice that overlaps
+    // this sentence — looking at the full node would also include letters
+    // from neighbouring sentences (e.g. ". More text follows today." after
+    // `<a>Read more docs</a>`).
+    const meaningful = covered.filter((s) => {
+      const localStart = Math.max(start - s.start, 0);
+      const localEnd = Math.min(end - s.start, s.node.textContent.length);
+      return hasLatinLetter(s.node.textContent.slice(localStart, localEnd));
+    });
     const ancestorSource = meaningful.length > 0 ? meaningful : covered;
     const ancestor = commonAncestorElement(ancestorSource.map((s) => s.node));
     if (!shouldTranslate(trimmed, ancestor)) continue;
@@ -517,7 +533,9 @@ function processRun(textNodes, options = {}) {
       continue;
     }
     inserts.sort((a, b) => a.offset - b.offset);
-    applyInsertions(seg.node, inserts);
+    applyInsertions(seg.node, inserts, {
+      deferredAtEnd: deferredSegments.has(seg),
+    });
   }
 
   if (count > 0) state.injected = true;
@@ -533,7 +551,7 @@ function isTrailingIncompleteSentence(segment, flatText) {
 // Replace a single text node with a fragment that splices loading spans in at
 // the given offsets. Each offset corresponds to the *end* of one sentence; the
 // span is inserted immediately after that point.
-function applyInsertions(textNode, inserts) {
+function applyInsertions(textNode, inserts, opts = {}) {
   if (!textNode.parentNode) return;
   const text = textNode.textContent;
   const fragment = document.createDocumentFragment();
@@ -566,15 +584,63 @@ function applyInsertions(textNode, inserts) {
     const tn = document.createTextNode(tail);
     fragment.appendChild(tn);
     newNodes.push(tn);
-    processedTextNodes.add(tn);
+    // When the same text node also held a deferred (incomplete) trailing
+    // sentence, the tail carries its prefix. Marking it processed would
+    // prevent the next batch (which delivers the rest of the sentence) from
+    // re-aggregating with it, and we'd translate only the suffix.
+    if (!opts.deferredAtEnd) processedTextNodes.add(tn);
   }
 
   for (const n of newNodes) ownInsertions.add(n);
   processedTextNodes.add(textNode);
   textNode.parentNode.replaceChild(fragment, textNode);
+  // If a loading landed at the very end of an <a>, lift it out so the
+  // translation span stops being a child of the link. Without this, the
+  // <a>'s clickable area absorbs the subtitle and (with display:block)
+  // renders the translation on a new line *inside* the link box, which
+  // visibly breaks link styling.
+  for (const l of loadings) liftLoadingFromTrailingAnchor(l);
   if (intersectionObserver) {
     for (const l of loadings) intersectionObserver.observe(l);
   }
+}
+
+function liftLoadingFromTrailingAnchor(loading) {
+  let anchor = null;
+  let cursor = loading.parentElement;
+  while (cursor) {
+    if (cursor.tagName === 'A') {
+      anchor = cursor;
+      break;
+    }
+    cursor = cursor.parentElement;
+  }
+  if (!anchor) return;
+  // Bail out if any meaningful sibling follows the loading anywhere up to
+  // the anchor — otherwise we'd leave content stranded after we move it.
+  let walker = loading;
+  while (walker !== anchor) {
+    let sib = walker.nextSibling;
+    while (sib) {
+      if (hasMeaningfulContent(sib)) return;
+      sib = sib.nextSibling;
+    }
+    walker = walker.parentNode;
+    if (!walker) return;
+  }
+  if (anchor.parentNode) {
+    anchor.parentNode.insertBefore(loading, anchor.nextSibling);
+  }
+}
+
+function hasMeaningfulContent(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent.length > 0;
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  if (node.dataset && node.dataset.subtitlerInjected === 'true') return false;
+  for (const child of node.childNodes) {
+    if (hasMeaningfulContent(child)) return true;
+  }
+  return false;
 }
 
 function processTextNode(textNode) {

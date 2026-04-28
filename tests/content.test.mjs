@@ -532,6 +532,107 @@ describe('collectAndInject (regression coverage)', () => {
     expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
   });
 
+  it('keeps the standalone-link short filter when a sibling sentence has letters', () => {
+    // Without slicing the covered segments by sentence range, the trailing
+    // node ". More text follows today." would contribute its Latin letters to
+    // sentence 1's "meaningful" set, the common ancestor would resolve to
+    // <p>, and the 3-word UI label inside <a> would be translated.
+    document.body.innerHTML =
+      '<p id="p"><a href="#">Read more docs</a>. More text follows today.</p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    // Only the second sentence should translate; the link itself stays a
+    // short standalone label.
+    expect(loadings.length).toBe(1);
+    expect(loadings[0].dataset.subtitlerSentence).toBe('More text follows today.');
+    // No loading should have been planted inside the <a>.
+    expect(document.querySelector('a').querySelector('.subtitler-loading')).toBeNull();
+  });
+
+  it('lifts the loading span out of an <a> when the sentence ends inside it', () => {
+    document.body.innerHTML =
+      '<p id="p">For details please visit <a href="#">the Amazon EC2 instance page.</a></p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    const loading = document.querySelector('.subtitler-loading');
+    expect(loading).not.toBeNull();
+    // The translation span must not be a descendant of the <a>, otherwise
+    // clicks on the subtitle would activate the link and the link's
+    // styling/box would absorb the subtitle.
+    expect(document.querySelector('a').contains(loading)).toBe(false);
+    expect(loading.dataset.subtitlerSentence).toBe(
+      'For details please visit the Amazon EC2 instance page.'
+    );
+  });
+
+  it('treats already-processed text nodes as run boundaries when re-walking', () => {
+    // Simulates a MutationObserver delivering a fresh prefix and suffix on
+    // either side of a previously-translated middle text node. Without
+    // flushing at processed boundaries, the prefix and suffix would join
+    // (eliding the middle's content) and the translator would receive a
+    // corrupted "Hello  world today everyone." sentence.
+    document.body.innerHTML = '<p id="p"></p>';
+    state.visible = true;
+    const p = document.getElementById('p');
+    const middle = document.createTextNode('In between sentence here.');
+    p.appendChild(middle);
+    // First pass: translate the middle, marking it processed.
+    processBlock(p);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(1);
+
+    // Now SPA-style additions arrive on either side of the (now processed)
+    // middle text node.
+    const prefix = document.createTextNode('Hello ');
+    p.insertBefore(prefix, p.firstChild);
+    const suffix = document.createTextNode(' world today everyone.');
+    p.appendChild(suffix);
+    processBlock(p);
+
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    for (const l of loadings) {
+      expect(l.dataset.subtitlerSentence || '').not.toMatch(/Hello\s{2,}world/);
+      expect(l.dataset.subtitlerSentence || '').not.toBe('Hello  world today everyone.');
+    }
+  });
+
+  it('keeps deferred trailing prose mergeable with later additions in the same node', () => {
+    // The text node below holds a complete first sentence and a deferred
+    // partial. Without preserving the tail as un-processed, the next batch
+    // (which delivers the link and its trailing " page.") would only see
+    // "Amazon EC2 M8i instance page." and translate that fragment instead of
+    // the full sentence.
+    document.body.innerHTML = '<p id="p"></p>';
+    state.visible = true;
+    const p = document.getElementById('p');
+    const head = document.createTextNode(
+      'First complete sentence here please. For more information, visit the '
+    );
+    p.appendChild(head);
+
+    expect(collectFromTextNode(head, { deferIncompleteFinal: true })).toBe(1);
+
+    const link = document.createElement('a');
+    link.href = '#';
+    link.textContent = 'Amazon EC2 M8i instance';
+    p.appendChild(link);
+
+    expect(collectAndInject(link)).toBe(0);
+
+    const tail = document.createTextNode(' page.');
+    p.appendChild(tail);
+
+    expect(collectFromTextNode(tail, { deferIncompleteFinal: true })).toBe(1);
+
+    const sentences = [...document.querySelectorAll('.subtitler-loading')].map(
+      (l) => l.dataset.subtitlerSentence
+    );
+    expect(sentences).toContain('First complete sentence here please.');
+    expect(sentences).toContain(
+      'For more information, visit the Amazon EC2 M8i instance page.'
+    );
+  });
+
   it('rejects an element added inside an already-injected ancestor', () => {
     document.body.innerHTML =
       '<div data-subtitler-injected="true"><p id="p">Hello world today is fine.</p></div>';
