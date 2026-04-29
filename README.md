@@ -8,12 +8,6 @@ A Chrome extension that toggles subtitle-style Japanese translations under Engli
 
 Translation runs entirely on-device using Chrome's built-in Translator API. Nothing is sent to a remote server.
 
-## Demo
-
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/90fb08d3-9b54-404b-aa42-f1ad8c758070" controls muted playsinline width="720"></video>
-</p>
-
 ## Features
 
 - **Toggle on/off with a shortcut** — show or hide translations instantly without reloading the page.
