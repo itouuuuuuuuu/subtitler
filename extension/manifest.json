@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "subtitler",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Chrome extension that toggles subtitle-style Japanese translations under English sentences (Alt+Shift+Y).",
   "minimum_chrome_version": "138",
   "action": {
@@ -24,9 +24,15 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ],
       "run_at": "document_idle"
     }
   ],
