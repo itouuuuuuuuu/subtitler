@@ -1,10 +1,20 @@
 const SKIP_TAGS = new Set([
   'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE',
-  'CODE', 'PRE', 'TEXTAREA', 'INPUT', 'KBD', 'SAMP', 'VAR',
+  'PRE', 'TEXTAREA', 'INPUT',
   // Form controls whose text is the submitted value or a label attribute;
   // injecting child spans into <option> would corrupt form submissions.
   'SELECT', 'OPTION', 'OPTGROUP',
 ]);
+
+// Inline code-like elements: their text contributes to the surrounding
+// sentence so the translator sees a coherent input (e.g. inline backticks in
+// markdown produce <code>foo</code> mid-prose; without this, "Use the foo
+// command." would split into "Use the" and "command." and translate as two
+// fragments). The element itself is not modified, so the code text stays
+// verbatim. <pre> remains in SKIP_TAGS, so block code (<pre><code>…</code>
+// </pre>) is still skipped wholesale — the <pre> ancestor short-circuits
+// before its <code> child is ever visited.
+const INLINE_TRANSPARENT_TAGS = new Set(['CODE', 'KBD', 'SAMP', 'VAR']);
 
 const BUTTON_LIKE_TAGS = new Set(['A', 'LABEL', 'SUMMARY']);
 const BUTTON_LIKE_ROLES = new Set([
@@ -505,14 +515,23 @@ function processBlock(block, options = {}) {
     // Anything we don't translate must still break the surrounding sentence
     // run, otherwise the text on either side gets concatenated by join('')
     // and the translator receives a corrupted sentence with the skipped
-    // content silently elided (e.g. `<code>aws ec2</code>` between two prose
-    // halves would produce "Use the  command today please.").
+    // content silently elided (e.g. a <textarea> between two prose halves
+    // would produce "Type something  to continue please."). Inline code-like
+    // tags are handled separately below: their text DOES join the run.
     if (
       SKIP_TAGS.has(node.tagName) ||
       (node.dataset && node.dataset.subtitlerInjected === 'true') ||
       isContentEditableNode(node)
     ) {
       flushRun();
+      return;
+    }
+    // Inline code-like elements stay in the sentence run: their text nodes
+    // are visited (and so their content is included in the flat string fed
+    // to the segmenter/translator), but we don't translate the code itself
+    // because applyInsertions only attaches loading spans at sentence ends.
+    if (INLINE_TRANSPARENT_TAGS.has(node.tagName)) {
+      for (const child of node.childNodes) visit(child);
       return;
     }
     if (BLOCK_TAGS.has(node.tagName)) {
