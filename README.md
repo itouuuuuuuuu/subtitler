@@ -104,21 +104,33 @@ npm run test:coverage
 
 ## Chrome ウェブストアへのリリース
 
-リリースパイプラインは GitHub Actions で完全に駆動されています。ワークフローは 3 つあります。
+リリースパイプラインは GitHub Actions で完全に駆動されています。ワークフローは関心事ごとに分離されています。
 
 | ワークフロー | トリガー | 内容 |
 | --- | --- | --- |
 | `ci.yml` | すべての PR と `main` への push | テスト実行、ZIP のビルド、artifact としてアップロード、`package.json` と `extension/manifest.json` のバージョン不一致は失敗扱い |
-| `prepare-release.yml` | 手動（`workflow_dispatch`） | バージョンを bump（`patch` / `minor` / `major` または明示的な `x.y.z`）、`scripts/sync-version.mjs` で `manifest.json` を同期、`release/vX.Y.Z` PR を作成 |
-| `tag-after-merge.yml` + `release.yml` | リリース PR がマージ → タグ push | `main` に `vX.Y.Z` を自動タグ付け、その後タグをトリガーにビルドが走り `subtitler-X.Y.Z.zip` を添付した GitHub Release を公開 |
+| `prepare-release.yml` | 手動（`workflow_dispatch`） | バージョンを bump（未指定なら次の patch、または明示的な `x.y.z`）、`scripts/sync-version.mjs` で `manifest.json` を同期、`release/vX.Y.Z` PR を作成 |
+| `tag-after-merge.yml` | リリース PR がマージ | `main` に `vX.Y.Z` を自動タグ付けし、`release.yml` を `workflow_dispatch` 経由で起動 |
+| `release.yml` | タグ push または手動（`workflow_dispatch`） | 既存タグからビルドし、`subtitler-X.Y.Z.zip` を添付した GitHub Release を公開 |
+| `build-zip.yml` | 手動（`workflow_dispatch`） | 既存タグから ZIP のみをビルドし、ワークフローの artifact としてダウンロード可能にする（GitHub Release は作成しない） |
+
+> `tag-after-merge.yml` がタグ push 後に `release.yml` を明示的に dispatch するのは、`GITHUB_TOKEN` が push したタグでは下流ワークフローが起動しないという GitHub Actions の仕様を回避するためです。
 
 ### リリース手順
 
-1. **Actions → Prepare release → Run workflow** を選び、`patch` / `minor` / `major` か `1.2.3` のような形式を指定します。
+1. **Actions → Prepare release → Run workflow** を選びます。`version` は空のままなら次の patch、または `1.2.3` のような明示的な値を指定できます。
 2. 自動で開く `Release vX.Y.Z` PR を確認してマージします。
-3. `tag-after-merge.yml` と `release.yml` の完了まで約 1 分待ちます。
+3. `tag-after-merge.yml` と `release.yml` の完了まで数十秒〜1 分待ちます。
 4. 新しい GitHub Release から `subtitler-X.Y.Z.zip` をダウンロードし、<https://chrome.google.com/webstore/devconsole> にアップロードします。
 5. ストア情報は [`STORE_LISTING.md`](STORE_LISTING.md) を、プライバシーポリシーは [`PRIVACY.md`](PRIVACY.md) を参照して入力します。
+
+### 既存バージョンの ZIP を取得する
+
+リリースを作らずに ZIP だけ欲しい場合は **Actions → Build ZIP → Run workflow** で対象バージョン（例: `0.1.1`）を指定して実行します。完了後、ワークフロー実行ページの **Artifacts** から ZIP をダウンロードできます。
+
+### 既存タグからリリースを再作成する
+
+何らかの理由で `release.yml` が走らなかった、もしくは Release を作り直したい場合は **Actions → Release → Run workflow** で対象バージョンを指定して手動実行できます。タグは事前に存在している必要があります。
 
 ### ローカルでのフォールバック
 
@@ -129,7 +141,7 @@ npm version patch       # または minor / major — sync-version.mjs も実行
 git push --follow-tags  # bump コミットと新しいタグを push
 ```
 
-push されたタグだけで `release.yml` が起動します（この方法は `main` に直接コミットするため、上記のワークフローを優先してください）。
+push されたタグで `release.yml` が起動します（この方法は `main` に直接コミットするため、上記のワークフローを優先してください）。
 
 ### プロモアセット
 

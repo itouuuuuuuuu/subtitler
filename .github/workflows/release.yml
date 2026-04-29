@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.1). Tag v$version must already exist.'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,7 +18,27 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version: $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        with:
+          ref: v${{ steps.ver.outputs.version }}
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -21,17 +47,17 @@ jobs:
       - run: npm ci
 
       - name: Verify version consistency
-        id: ver
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/v}"
+          set -e
           PKG=$(node -p "require('./package.json').version")
           MAN=$(node -p "require('./extension/manifest.json').version")
-          echo "tag=$TAG  package.json=$PKG  manifest.json=$MAN"
-          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$MAN" ]; then
-            echo "::error::Version mismatch: tag=$TAG package=$PKG manifest=$MAN"
+          echo "tag=v$VERSION  package.json=$PKG  manifest.json=$MAN"
+          if [ "$VERSION" != "$PKG" ] || [ "$VERSION" != "$MAN" ]; then
+            echo "::error::Version mismatch: tag=v$VERSION package=$PKG manifest=$MAN"
             exit 1
           fi
-          echo "version=$TAG" >> "$GITHUB_OUTPUT"
 
       - run: npm test
 
