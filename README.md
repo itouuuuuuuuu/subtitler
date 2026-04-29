@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icon.png" alt="subtitler icon" width="256" height="256">
+  <img src="assets/promo-1400x560.png" alt="subtitler — Japanese subtitles for English pages">
 </p>
 
 # subtitler
