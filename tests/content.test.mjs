@@ -801,6 +801,103 @@ describe('collectAndInject', () => {
     expect(count).toBe(0);
   });
 
+  it('skips elements with role="tooltip"', () => {
+    document.body.innerHTML =
+      '<div role="tooltip">Fork your own copy of this repository today.</div>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips GitHub <tool-tip> custom elements', () => {
+    document.body.innerHTML =
+      '<tool-tip popover="manual">Fork your own copy of this repository today.</tool-tip>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips text inside a tooltip ancestor when starting from a descendant', () => {
+    document.body.innerHTML =
+      '<div role="tooltip"><span id="s">Fork your own copy of this repository today.</span></div>';
+    state.visible = true;
+    expect(collectAndInject(document.getElementById('s'))).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips items inside a role="menu" container', () => {
+    document.body.innerHTML = `
+      <div role="menu">
+        <a href="#">Open in github.dev</a>
+        <a href="#">Open in a new github.dev tab</a>
+        <a href="#">Open in codespace</a>
+      </div>`;
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips items inside a role="listbox" container', () => {
+    document.body.innerHTML =
+      '<div role="listbox"><div>First option label here please.</div></div>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+  });
+
+  it('skips visually-hidden skip links (sr-only)', () => {
+    document.body.innerHTML = '<a class="sr-only" href="#main">Skip to content</a>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips visually-hidden ancestors with the visually-hidden class', () => {
+    document.body.innerHTML =
+      '<span class="visually-hidden"><span id="s">Skip to main navigation</span></span>';
+    state.visible = true;
+    expect(collectAndInject(document.getElementById('s'))).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips GitHub-style d-none hotkey-only links', () => {
+    document.body.innerHTML =
+      '<a class="d-none js-github-dev-shortcut" data-hotkey=",,Mod+Alt+," href="https://github.dev/">Open in github.dev</a>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips elements inside a parent with the hidden class', () => {
+    document.body.innerHTML =
+      '<div class="hidden"><span id="s">Open in a new tab quickly</span></div>';
+    state.visible = true;
+    expect(collectAndInject(document.getElementById('s'))).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips elements with the HTML hidden attribute', () => {
+    document.body.innerHTML =
+      '<div hidden><span id="s">Open in github.dev right now</span></div>';
+    state.visible = true;
+    expect(collectAndInject(document.getElementById('s'))).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips GitHub Primer show-on-focus skip links', () => {
+    document.body.innerHTML =
+      '<a class="show-on-focus js-skip-to-content" href="#start-of-content">Skip to content</a>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
   it('skips already-injected subtrees', () => {
     document.body.innerHTML =
       '<p data-subtitler-injected="true">Hello world today is fine.</p>';
