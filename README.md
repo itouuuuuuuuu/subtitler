@@ -101,6 +101,42 @@ expose a CommonJS `module.exports` block guarded by `typeof module`, which
 is a no-op in the browser but makes the source units consumable from
 `vitest`.
 
+## Releasing to the Chrome Web Store
+
+The release pipeline is fully driven by GitHub Actions. There are three workflows:
+
+| Workflow | Trigger | What it does |
+| --- | --- | --- |
+| `ci.yml` | every PR / push to `main` | runs tests, builds the ZIP, uploads it as an artifact, fails if `package.json` and `extension/manifest.json` versions disagree |
+| `prepare-release.yml` | manual (`workflow_dispatch`) | bumps the version (`patch` / `minor` / `major` / explicit `x.y.z`), runs `scripts/sync-version.mjs` so `manifest.json` matches, opens a `release/vX.Y.Z` PR |
+| `tag-after-merge.yml` + `release.yml` | release PR merged → tag pushed | auto-tags `main` with `vX.Y.Z`, then the tag triggers a build that publishes a GitHub Release with `subtitler-X.Y.Z.zip` attached |
+
+### Cutting a release
+
+1. **Actions → Prepare release → Run workflow**, choose `patch` / `minor` / `major` (or type `1.2.3`).
+2. Review and merge the auto-opened `Release vX.Y.Z` PR.
+3. Wait ~1 minute for `tag-after-merge.yml` and `release.yml` to finish.
+4. Download `subtitler-X.Y.Z.zip` from the new GitHub Release and upload it at <https://chrome.google.com/webstore/devconsole>.
+5. Fill in the listing using [`STORE_LISTING.md`](STORE_LISTING.md). The privacy policy lives at [`PRIVACY.md`](PRIVACY.md).
+
+### Local fallback
+
+If you ever need to cut a release without GitHub Actions:
+
+```sh
+npm version patch       # or minor / major — also runs sync-version.mjs and stages manifest.json
+git push --follow-tags  # push the bump commit and the new tag
+```
+
+The pushed tag triggers `release.yml` on its own. (This commits directly to `main`, so prefer the workflow above.)
+
+### Promo assets
+
+Already generated under `assets/`:
+
+- `assets/promo-440x280.png` — small promo tile (required by the Web Store).
+- `assets/promo-1400x560.png` — marquee tile (optional; used for featured placement).
+
 ## Privacy
 
 - All translation happens locally inside Chrome via the Translator API.

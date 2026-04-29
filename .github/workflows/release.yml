@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify version consistency
+        id: ver
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG=$(node -p "require('./package.json').version")
+          MAN=$(node -p "require('./extension/manifest.json').version")
+          echo "tag=$TAG  package.json=$PKG  manifest.json=$MAN"
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$MAN" ]; then
+            echo "::error::Version mismatch: tag=$TAG package=$PKG manifest=$MAN"
+            exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Verify zip exists
+        run: ls -la dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/subtitler-${{ steps.ver.outputs.version }}.zip
