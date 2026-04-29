@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Target version (e.g., 0.1.1, 1.2.3). Defaults to next patch.'
-        required: true
-        default: '0.1.1'
+        description: 'Target version (e.g., 1.2.3). Leave empty to bump patch from package.json.'
+        required: false
         type: string
 
 permissions:
@@ -37,9 +36,17 @@ jobs:
       - name: Set version
         id: bump
         env:
-          VERSION: ${{ inputs.version }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -e
+          if [ -z "$INPUT_VERSION" ]; then
+            CURRENT=$(node -p "require('./package.json').version")
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+            echo "No version supplied; auto-bumped $CURRENT -> $VERSION"
+          else
+            VERSION="$INPUT_VERSION"
+          fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Invalid version: $VERSION (expected semver like 1.2.3)"
             exit 1
@@ -48,28 +55,6 @@ jobs:
           node scripts/sync-version.mjs
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Set to v$VERSION"
-
-      - name: Update default version for next run
-        env:
-          VERSION: ${{ steps.bump.outputs.version }}
-        run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const path = '.github/workflows/prepare-release.yml';
-          const [major, minor, patch] = process.env.VERSION.split('.').map((part) => Number(part.replace(/[^0-9].*$/, '')));
-          const next = `${major}.${minor}.${patch + 1}`;
-          const content = fs.readFileSync(path, 'utf8');
-          const updated = content.replace(
-            /(inputs:\s*\n\s*version:[\s\S]*?default:\s*)(['"])[^'"]*\2/,
-            `$1$2${next}$2`
-          );
-          if (updated === content) {
-            console.error('Failed to update default version in workflow file.');
-            process.exit(1);
-          }
-          fs.writeFileSync(path, updated);
-          console.log(`Default for next run set to ${next}`);
-          NODE
 
       - name: Run tests on bumped tree
         run: npm test
@@ -82,7 +67,7 @@ jobs:
           set -e
           BRANCH="release/v$VERSION"
           git switch -c "$BRANCH"
-          git add package.json package-lock.json extension/manifest.json .github/workflows/prepare-release.yml
+          git add package.json package-lock.json extension/manifest.json
           git commit -m "chore(release): v$VERSION"
           git push -u origin "$BRANCH"
           gh pr create \
