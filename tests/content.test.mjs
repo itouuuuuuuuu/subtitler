@@ -470,22 +470,58 @@ describe('processBlock (inline-spanning aggregation)', () => {
 // Codex review regressions
 // ---------------------------------------------------------------------------
 describe('processBlock (regression coverage)', () => {
-  it('does not concatenate prose across an inline SKIP_TAG element', () => {
-    // Without the run-flush fix, "Use the " and " command today please." were
-    // joined as "Use the  command today please." with the <code> content
-    // silently dropped from the translation input.
+  it('treats inline <code> as part of the surrounding sentence', () => {
+    // Inline backticks in markdown render as <code> mid-prose. The whole
+    // sentence should reach the translator as one coherent unit, and the
+    // <code> body must stay verbatim.
     document.body.innerHTML =
       '<p id="p">Use the <code>aws ec2</code> command today please.</p>';
     state.visible = true;
     processBlock(document.getElementById('p'));
-    // The <code> body must be preserved verbatim.
     expect(document.querySelector('code').textContent).toBe('aws ec2');
-    // Whatever sentences we queued, none of them may contain the corrupted
-    // "Use the  command" form.
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    expect(loadings.length).toBe(1);
+    expect(loadings[0].dataset.subtitlerSentence).toBe(
+      'Use the aws ec2 command today please.'
+    );
+  });
+
+  it('aggregates a sentence across multiple inline <code> spans', () => {
+    // Mirrors a GitHub PR description with several backtick spans in one
+    // sentence. Without the inline-transparent fix this fragmented into
+    // four separate translation units around each <code>.
+    document.body.innerHTML =
+      '<p id="p">When this PR is merged, the <code>tag-after-merge</code> workflow will tag the merge commit with <code>v0.1.1</code>, which triggers <code>release.yml</code> to build the ZIP and publish a GitHub Release.</p>';
+    state.visible = true;
+    processBlock(document.getElementById('p'));
+    const loadings = document.querySelectorAll('.subtitler-loading');
+    expect(loadings.length).toBe(1);
+    expect(loadings[0].dataset.subtitlerSentence).toBe(
+      'When this PR is merged, the tag-after-merge workflow will tag the merge commit with v0.1.1, which triggers release.yml to build the ZIP and publish a GitHub Release.'
+    );
+    const codes = document.querySelectorAll('code');
+    expect(codes.length).toBe(3);
+    expect(codes[0].textContent).toBe('tag-after-merge');
+    expect(codes[1].textContent).toBe('v0.1.1');
+    expect(codes[2].textContent).toBe('release.yml');
+  });
+
+  it('still skips <pre><code> block code wholesale', () => {
+    // <pre> stays in SKIP_TAGS, so its <code> child is never visited even
+    // though <code> itself is now transparent. The block code must not
+    // contribute any text to surrounding runs and must not be translated.
+    document.body.innerHTML =
+      '<div id="d"><p>Run the following snippet to get started:</p><pre><code>npm install\nnpm test</code></pre></div>';
+    state.visible = true;
+    processBlock(document.getElementById('d'));
     const loadings = document.querySelectorAll('.subtitler-loading');
     for (const l of loadings) {
-      expect(l.dataset.subtitlerSentence).not.toMatch(/Use the\s{2,}command/);
+      expect(l.dataset.subtitlerSentence).not.toContain('npm install');
+      expect(l.dataset.subtitlerSentence).not.toContain('npm test');
     }
+    expect(document.querySelector('pre code').textContent).toBe(
+      'npm install\nnpm test'
+    );
   });
 
   it('does not concatenate words across <br>', () => {
