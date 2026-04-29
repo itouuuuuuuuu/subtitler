@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   tag:
@@ -37,10 +38,19 @@ jobs:
         run: |
           set -e
           if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "Tag v$VERSION already exists; skipping."
-            exit 0
+            echo "Tag v$VERSION already exists; skipping push."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "v$VERSION" -m "Release v$VERSION"
+            git push origin "v$VERSION"
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$VERSION" -m "Release v$VERSION"
-          git push origin "v$VERSION"
+
+      - name: Dispatch Release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # GITHUB_TOKEN-pushed tags do not trigger downstream workflows,
+          # so dispatch release.yml explicitly (workflow_dispatch is exempt).
+          gh workflow run release.yml -f version="$VERSION"
