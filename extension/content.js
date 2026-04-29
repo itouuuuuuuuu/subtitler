@@ -606,7 +606,7 @@ function processRun(textNodes, options = {}) {
   }
   const flatText = segments.map((s) => s.node.textContent).join('');
 
-  if (!hasLatinLetter(flatText)) {
+  if (!hasLatinLetter(flatText) || isPredominantlyJapanese(flatText)) {
     for (const s of segments) processedTextNodes.add(s.node);
     return 0;
   }
@@ -629,7 +629,7 @@ function processRun(textNodes, options = {}) {
     const start = sent.index;
     const end = start + sent.segment.length;
     const trimmed = sent.segment.trim();
-    if (!trimmed || !hasLatinLetter(trimmed)) continue;
+    if (!trimmed || !hasLatinLetter(trimmed) || isPredominantlyJapanese(trimmed)) continue;
 
     const covered = segments.filter((s) => s.end > start && s.start < end);
     if (covered.length === 0) continue;
@@ -803,6 +803,23 @@ function hasLatinLetter(text) {
   return /[A-Za-z]/.test(text);
 }
 
+// Filter out text that is already in Japanese. The Translator API is hard-wired
+// to en→ja, so feeding it Japanese-dominant prose (e.g. a translated README
+// paragraph that happens to contain identifiers like `IntersectionObserver`)
+// produces garbled output. The hasLatinLetter gate alone is too permissive
+// because a single Latin token in an otherwise Japanese sentence passes it.
+function isPredominantlyJapanese(text) {
+  const jp = text.match(/[぀-ゟ゠-ヿ一-鿿ｦ-ﾟ]/g);
+  if (!jp) return false;
+  // Compare against Latin *words*, not letters. Embedded Latin in Japanese
+  // prose is almost always identifiers / proper nouns (`IntersectionObserver`,
+  // `Translator API`), so character count overweights them — e.g. `Chrome の
+  // Translator API` would beat the kana around it on raw letter count even
+  // though the sentence is plainly Japanese narrative.
+  const latinWords = text.match(/[A-Za-z]+/g) || [];
+  return jp.length >= latinWords.length;
+}
+
 function isAddressLike(text) {
   const t = (text || '').trim();
   if (!t) return false;
@@ -934,6 +951,7 @@ if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     chromeKeyToCode,
     shouldTranslate,
     hasLatinLetter,
+    isPredominantlyJapanese,
     isAddressLike,
     setVisibility,
     processTextNode,

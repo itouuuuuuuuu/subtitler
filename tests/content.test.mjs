@@ -12,6 +12,7 @@ const {
   chromeKeyToCode,
   shouldTranslate,
   hasLatinLetter,
+  isPredominantlyJapanese,
   isAddressLike,
   setVisibility,
   processTextNode,
@@ -75,6 +76,47 @@ describe('hasLatinLetter', () => {
     expect(hasLatinLetter('1234567890')).toBe(false);
     expect(hasLatinLetter('   ')).toBe(false);
     expect(hasLatinLetter('')).toBe(false);
+  });
+});
+
+describe('isPredominantlyJapanese', () => {
+  it('flags sentences that are mostly Japanese with a few Latin tokens', () => {
+    expect(
+      isPredominantlyJapanese(
+        'IntersectionObserver による遅延翻訳 — ビューポートに入った文だけを翻訳するため、長いページでも軽快でモデル呼び出しも抑えられます。'
+      )
+    ).toBe(true);
+    expect(
+      isPredominantlyJapanese(
+        '動的コンテンツ対応 — MutationObserver により SPA や無限スクロールで追加されたテキストにも追従。'
+      )
+    ).toBe(true);
+    expect(
+      isPredominantlyJapanese(
+        'UI ラベルのフィルタ — <button> / role="button" / 単独の <a> / <label> / <summary> などの中の短いテキストはスキップし、ナビリンクやボタンのラベルが汚れないようにしています。'
+      )
+    ).toBe(true);
+    expect(
+      isPredominantlyJapanese('オンデバイス翻訳 — Chrome の Translator API（en → ja）を使用。')
+    ).toBe(true);
+  });
+
+  it('flags pure Japanese (kana / kanji only)', () => {
+    expect(isPredominantlyJapanese('こんにちは')).toBe(true);
+    expect(isPredominantlyJapanese('カタカナだけの文')).toBe(true);
+    expect(isPredominantlyJapanese('日本語')).toBe(true);
+  });
+
+  it('does not flag English prose, even with a stray Japanese character', () => {
+    expect(isPredominantlyJapanese('Use the foo command to start.')).toBe(false);
+    expect(isPredominantlyJapanese('Hello world')).toBe(false);
+    expect(isPredominantlyJapanese('This is a 日本語 example sentence with words.')).toBe(false);
+  });
+
+  it('returns false for empty / non-letter input', () => {
+    expect(isPredominantlyJapanese('')).toBe(false);
+    expect(isPredominantlyJapanese('   ')).toBe(false);
+    expect(isPredominantlyJapanese('1234567890')).toBe(false);
   });
 });
 
