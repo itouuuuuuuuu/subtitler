@@ -169,11 +169,11 @@ describe('shouldTranslate', () => {
     expect(shouldTranslate('See more docs.', span)).toBe(false);
   });
 
-  it('rejects short text inside <a>', () => {
+  it('translates 3+ word text inside <a> now that the short-link threshold matches MIN_WORD_COUNT', () => {
     document.body.innerHTML = '<a href="#"><span id="s">x</span></a>';
     const span = document.getElementById('s');
-    expect(shouldTranslate('See more docs.', span)).toBe(false);
-    expect(shouldTranslate('Read full article today.', span)).toBe(false);
+    expect(shouldTranslate('See more docs.', span)).toBe(true);
+    expect(shouldTranslate('Read full article today.', span)).toBe(true);
   });
 
   it('accepts long text inside <a>', () => {
@@ -184,16 +184,16 @@ describe('shouldTranslate', () => {
     ).toBe(true);
   });
 
-  it('rejects short text inside <label>', () => {
+  it('translates 3+ word text inside <label>', () => {
     document.body.innerHTML = '<label><span id="s">x</span></label>';
     const span = document.getElementById('s');
-    expect(shouldTranslate('Enter your email here.', span)).toBe(false);
+    expect(shouldTranslate('Enter your email here.', span)).toBe(true);
   });
 
-  it('rejects short text inside <summary>', () => {
+  it('translates 3+ word text inside <summary>', () => {
     document.body.innerHTML = '<details><summary><span id="s">x</span></summary></details>';
     const span = document.getElementById('s');
-    expect(shouldTranslate('See more details please.', span)).toBe(false);
+    expect(shouldTranslate('See more details please.', span)).toBe(true);
   });
 
   it('rejects URL-like link text inside <a> regardless of length', () => {
@@ -343,11 +343,11 @@ describe('processBlock (inline-spanning aggregation)', () => {
     expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
   });
 
-  it('keeps the existing short-link threshold for standalone wording links', () => {
+  it('translates a 3-word standalone wording link with the lowered threshold', () => {
     document.body.innerHTML = '<p id="p"><a href="#">Read the docs</a></p>';
     state.visible = true;
     processBlock(document.getElementById('p'));
-    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(1);
   });
 
   it('translates a long enough standalone wording link', () => {
@@ -423,14 +423,13 @@ describe('processBlock (regression coverage)', () => {
     }
   });
 
-  it('keeps the standalone-link short filter when only punctuation lies outside <a>', () => {
-    // Without the meaningful-segments fix, the trailing period would pull the
-    // common ancestor up to <p>, hiding the <a> from shouldTranslate's walk
-    // and translating a 3-word UI label.
+  it('translates a standalone wording link even when only punctuation lies outside <a>', () => {
+    // The meaningful-segments fix still resolves the ancestor to <a>; with the
+    // lowered threshold (== MIN_WORD_COUNT) a 3-word link now translates.
     document.body.innerHTML = '<p id="p"><a href="#">Read more docs</a>.</p>';
     state.visible = true;
     processBlock(document.getElementById('p'));
-    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(1);
   });
 
   it('still translates an in-prose link followed by trailing punctuation', () => {
@@ -532,21 +531,20 @@ describe('collectAndInject (regression coverage)', () => {
     expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
   });
 
-  it('keeps the standalone-link short filter when a sibling sentence has letters', () => {
-    // Without slicing the covered segments by sentence range, the trailing
-    // node ". More text follows today." would contribute its Latin letters to
-    // sentence 1's "meaningful" set, the common ancestor would resolve to
-    // <p>, and the 3-word UI label inside <a> would be translated.
+  it('translates both the standalone link and a sibling sentence when both clear MIN_WORD_COUNT', () => {
+    // The meaningful-segments slicing still resolves sentence 1's ancestor to
+    // <a> rather than <p> (so its filter walk still sees the link), but with
+    // the lowered threshold the 3-word link itself now translates.
     document.body.innerHTML =
       '<p id="p"><a href="#">Read more docs</a>. More text follows today.</p>';
     state.visible = true;
     processBlock(document.getElementById('p'));
     const loadings = document.querySelectorAll('.subtitler-loading');
-    // Only the second sentence should translate; the link itself stays a
-    // short standalone label.
-    expect(loadings.length).toBe(1);
-    expect(loadings[0].dataset.subtitlerSentence).toBe('More text follows today.');
-    // No loading should have been planted inside the <a>.
+    expect(loadings.length).toBe(2);
+    expect(loadings[0].dataset.subtitlerSentence).toBe('Read more docs.');
+    expect(loadings[1].dataset.subtitlerSentence).toBe('More text follows today.');
+    // The loading for sentence 1 lands in <p> (the period sits outside <a>),
+    // so neither loading should be planted inside the link.
     expect(document.querySelector('a').querySelector('.subtitler-loading')).toBeNull();
   });
 
