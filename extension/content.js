@@ -62,7 +62,7 @@ const scheduleIdle = (cb) => {
   return setTimeout(cb, MUTATION_BATCH_DELAY);
 };
 
-console.info('[subtitler] content script loaded. Trigger via Cmd+Shift+Y or the toolbar icon.');
+console.info('[subtitler] content script loaded. Trigger via the configured shortcut or the toolbar icon.');
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'TOGGLE') handleToggle();
@@ -70,19 +70,106 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 // Fallback shortcut handler: chrome.commands sometimes fails to wake the
 // service worker (notably in Arc), so capture the key directly in the page.
-function isOnMac() {
-  return /mac|iphone|ipad|ipod/i.test(
-    navigator.userAgentData?.platform || navigator.platform || ''
-  );
+// The matcher is built from the user's currently-configured shortcut so that
+// any combination set via chrome://extensions/shortcuts works.
+let toggleShortcut = null;
+
+async function loadToggleShortcut() {
+  try {
+    const reply = await chrome.runtime.sendMessage({ type: 'GET_TOGGLE_SHORTCUT' });
+    toggleShortcut = parseChromeShortcut(reply?.shortcut || '');
+  } catch {
+    toggleShortcut = null;
+  }
+}
+
+loadToggleShortcut();
+
+// Refresh after the user updates the shortcut and returns to the tab, so the
+// new binding takes effect without a page reload.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') loadToggleShortcut();
+});
+
+// Parse a Chrome shortcut string into a normalized matcher.
+//   macOS:  glyphs concatenated, e.g. "⌘⇧Y" or "⌃⌥F1"
+//   Other:  plus-separated tokens, e.g. "Ctrl+Shift+Y" / "Alt+Shift+Y"
+function parseChromeShortcut(s) {
+  if (!s) return null;
+  const desc = { meta: false, ctrl: false, alt: false, shift: false, code: null };
+  if (/[⌘⌥⇧⌃]/.test(s)) {
+    // Modifier glyphs always precede the key. Consume them off the front, then
+    // treat the remainder as a single key token (handles "F1", "Space", etc.).
+    let i = 0;
+    while (i < s.length) {
+      const ch = s[i];
+      if (ch === '⌘') desc.meta = true;
+      else if (ch === '⌥') desc.alt = true;
+      else if (ch === '⇧') desc.shift = true;
+      else if (ch === '⌃') desc.ctrl = true;
+      else if (ch === ' ' || ch === '+') {
+        // skip separator
+      } else break;
+      i++;
+    }
+    desc.code = chromeKeyToCode(s.slice(i).trim());
+  } else {
+    for (const part of s.split('+')) {
+      const t = part.trim();
+      const lc = t.toLowerCase();
+      if (lc === 'ctrl' || lc === 'macctrl') desc.ctrl = true;
+      else if (lc === 'shift') desc.shift = true;
+      else if (lc === 'alt' || lc === 'option') desc.alt = true;
+      else if (lc === 'command' || lc === 'cmd' || lc === 'meta') desc.meta = true;
+      else if (t) desc.code = chromeKeyToCode(t);
+    }
+  }
+  return desc.code ? desc : null;
+}
+
+function chromeKeyToCode(key) {
+  if (!key) return null;
+  if (/^[A-Za-z]$/.test(key)) return `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  if (/^F([1-9]|1[0-2])$/i.test(key)) return key.toUpperCase();
+  const map = {
+    ' ': 'Space',
+    Space: 'Space',
+    Tab: 'Tab',
+    Up: 'ArrowUp',
+    Down: 'ArrowDown',
+    Left: 'ArrowLeft',
+    Right: 'ArrowRight',
+    Home: 'Home',
+    End: 'End',
+    PageUp: 'PageUp',
+    PageDown: 'PageDown',
+    Insert: 'Insert',
+    Delete: 'Delete',
+    ',': 'Comma',
+    '.': 'Period',
+    '/': 'Slash',
+    ';': 'Semicolon',
+    "'": 'Quote',
+    '[': 'BracketLeft',
+    ']': 'BracketRight',
+    '\\': 'Backslash',
+    '`': 'Backquote',
+    '-': 'Minus',
+    '=': 'Equal',
+  };
+  return map[key] ?? null;
 }
 
 function isToggleShortcut(e) {
-  if (typeof e.key !== 'string') return false;
-  if (e.key.toLowerCase() !== 'y') return false;
-  if (!e.shiftKey || e.altKey) return false;
-  return isOnMac()
-    ? e.metaKey && !e.ctrlKey
-    : e.ctrlKey && !e.metaKey;
+  if (!toggleShortcut) return false;
+  const t = toggleShortcut;
+  if (e.code !== t.code) return false;
+  if (Boolean(e.shiftKey) !== t.shift) return false;
+  if (Boolean(e.altKey) !== t.alt) return false;
+  if (Boolean(e.metaKey) !== t.meta) return false;
+  if (Boolean(e.ctrlKey) !== t.ctrl) return false;
+  return true;
 }
 
 window.addEventListener(
@@ -783,8 +870,9 @@ function hideBanner() {
 if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
   module.exports = {
     handleToggle,
-    isOnMac,
     isToggleShortcut,
+    parseChromeShortcut,
+    chromeKeyToCode,
     shouldTranslate,
     hasLatinLetter,
     isAddressLike,
@@ -810,6 +898,8 @@ if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
       get mutationObserver() { return mutationObserver; },
       get queue() { return queue; },
       get cache() { return cache; },
+      get toggleShortcut() { return toggleShortcut; },
+      setToggleShortcut(desc) { toggleShortcut = desc; },
       reset() {
         cache.clear();
         queue.length = 0;

@@ -39,7 +39,7 @@ Translation runs entirely on-device using Chrome's built-in Translator API. Noth
 
 ## Usage
 
-- **Keyboard shortcut**: `Cmd+Shift+Y` (macOS) / `Ctrl+Shift+Y` (Windows / Linux). Press once to translate the current page; press again to hide; press again to show.
+- **Keyboard shortcut**: defaults to `Alt+Shift+Y` (macOS: Option+Shift+Y). You can rebind it to any combination from `chrome://extensions/shortcuts`. Press once to translate the current page; press again to hide; press again to show.
 - **Toolbar icon**: clicking the subtitler icon does the same thing as the shortcut.
 - The first translation run on a fresh profile will display a banner asking you to confirm downloading the translation model. Click **Download**, or **Cancel** to abort.
 

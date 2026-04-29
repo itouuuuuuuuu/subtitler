@@ -7,8 +7,9 @@ import subtitler from '../extension/content.js';
 
 const {
   handleToggle,
-  isOnMac,
   isToggleShortcut,
+  parseChromeShortcut,
+  chromeKeyToCode,
   shouldTranslate,
   hasLatinLetter,
   isAddressLike,
@@ -77,56 +78,130 @@ describe('hasLatinLetter', () => {
   });
 });
 
+describe('parseChromeShortcut', () => {
+  it('parses macOS glyph-form shortcuts', () => {
+    expect(parseChromeShortcut('⌘⇧Y')).toEqual({
+      meta: true, ctrl: false, alt: false, shift: true, code: 'KeyY',
+    });
+    expect(parseChromeShortcut('⌥⇧Y')).toEqual({
+      meta: false, ctrl: false, alt: true, shift: true, code: 'KeyY',
+    });
+    expect(parseChromeShortcut('⌃⌥⇧F1')).toEqual({
+      meta: false, ctrl: true, alt: true, shift: true, code: 'F1',
+    });
+  });
+
+  it('parses plus-separated shortcuts', () => {
+    expect(parseChromeShortcut('Ctrl+Shift+Y')).toEqual({
+      meta: false, ctrl: true, alt: false, shift: true, code: 'KeyY',
+    });
+    expect(parseChromeShortcut('Alt+Shift+Y')).toEqual({
+      meta: false, ctrl: false, alt: true, shift: true, code: 'KeyY',
+    });
+    expect(parseChromeShortcut('Command+Shift+Y')).toEqual({
+      meta: true, ctrl: false, alt: false, shift: true, code: 'KeyY',
+    });
+    expect(parseChromeShortcut('MacCtrl+Shift+Y')).toEqual({
+      meta: false, ctrl: true, alt: false, shift: true, code: 'KeyY',
+    });
+  });
+
+  it('parses punctuation and digit keys', () => {
+    expect(parseChromeShortcut('Ctrl+Shift+;')).toMatchObject({ code: 'Semicolon' });
+    expect(parseChromeShortcut('Ctrl+Shift+0')).toMatchObject({ code: 'Digit0' });
+    expect(parseChromeShortcut('⌘⇧/')).toMatchObject({ code: 'Slash' });
+  });
+
+  it('returns null for empty or unparseable strings', () => {
+    expect(parseChromeShortcut('')).toBeNull();
+    expect(parseChromeShortcut(null)).toBeNull();
+    expect(parseChromeShortcut(undefined)).toBeNull();
+    // Modifier-only is not a valid binding.
+    expect(parseChromeShortcut('Ctrl+Shift')).toBeNull();
+  });
+});
+
+describe('chromeKeyToCode', () => {
+  it('maps letters to Key{X}', () => {
+    expect(chromeKeyToCode('a')).toBe('KeyA');
+    expect(chromeKeyToCode('Z')).toBe('KeyZ');
+  });
+
+  it('maps digits to Digit{N}', () => {
+    expect(chromeKeyToCode('0')).toBe('Digit0');
+    expect(chromeKeyToCode('9')).toBe('Digit9');
+  });
+
+  it('maps function keys verbatim', () => {
+    expect(chromeKeyToCode('F1')).toBe('F1');
+    expect(chromeKeyToCode('f12')).toBe('F12');
+  });
+});
+
 describe('isToggleShortcut', () => {
-  it('matches the shortcut on the host platform', () => {
-    const onMac = isOnMac();
-    const ev = onMac
-      ? { key: 'y', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false }
-      : { key: 'y', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true };
-    expect(isToggleShortcut(ev)).toBe(true);
+  beforeEach(() => {
+    // Default to a known shortcut for each test.
+    __test.setToggleShortcut(parseChromeShortcut('Alt+Shift+Y'));
   });
 
-  it('also accepts uppercase Y', () => {
-    const onMac = isOnMac();
-    const ev = onMac
-      ? { key: 'Y', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false }
-      : { key: 'Y', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true };
-    expect(isToggleShortcut(ev)).toBe(true);
+  it('matches the configured shortcut', () => {
+    expect(
+      isToggleShortcut({
+        code: 'KeyY',
+        shiftKey: true, altKey: true, metaKey: false, ctrlKey: false,
+      })
+    ).toBe(true);
   });
 
-  it('rejects keys other than y', () => {
+  it('matches even when e.key is mangled (macOS Option produces a special char)', () => {
     expect(
-      isToggleShortcut({ key: 'x', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false })
-    ).toBe(false);
-    expect(
-      isToggleShortcut({ key: 'a', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true })
-    ).toBe(false);
+      isToggleShortcut({
+        code: 'KeyY', key: 'Á',
+        shiftKey: true, altKey: true, metaKey: false, ctrlKey: false,
+      })
+    ).toBe(true);
   });
 
-  it('rejects when Shift is missing', () => {
+  it('rejects when no shortcut is configured', () => {
+    __test.setToggleShortcut(null);
     expect(
-      isToggleShortcut({ key: 'y', shiftKey: false, altKey: false, metaKey: true, ctrlKey: false })
-    ).toBe(false);
-  });
-
-  it('rejects when Alt is held', () => {
-    expect(
-      isToggleShortcut({ key: 'y', shiftKey: true, altKey: true, metaKey: true, ctrlKey: false })
+      isToggleShortcut({
+        code: 'KeyY',
+        shiftKey: true, altKey: true, metaKey: false, ctrlKey: false,
+      })
     ).toBe(false);
   });
 
-  it('rejects when key is not a string', () => {
-    expect(isToggleShortcut({ key: undefined, shiftKey: true, metaKey: true })).toBe(false);
-    expect(isToggleShortcut({})).toBe(false);
+  it('rejects mismatched code', () => {
+    expect(
+      isToggleShortcut({ code: 'KeyX', shiftKey: true, altKey: true, metaKey: false, ctrlKey: false })
+    ).toBe(false);
   });
 
-  it('rejects the wrong-platform modifier on the host platform', () => {
-    const onMac = isOnMac();
-    // Inverse of the host-platform expectation
-    const wrong = onMac
-      ? { key: 'y', shiftKey: true, altKey: false, metaKey: false, ctrlKey: true }
-      : { key: 'y', shiftKey: true, altKey: false, metaKey: true, ctrlKey: false };
-    expect(isToggleShortcut(wrong)).toBe(false);
+  it('rejects mismatched modifiers', () => {
+    expect(
+      isToggleShortcut({ code: 'KeyY', shiftKey: false, altKey: true, metaKey: false, ctrlKey: false })
+    ).toBe(false);
+    expect(
+      isToggleShortcut({ code: 'KeyY', shiftKey: true, altKey: true, metaKey: true, ctrlKey: false })
+    ).toBe(false);
+  });
+
+  it('matches a different user-configured shortcut (Cmd+Shift+;)', () => {
+    __test.setToggleShortcut(parseChromeShortcut('⌘⇧;'));
+    expect(
+      isToggleShortcut({
+        code: 'Semicolon',
+        shiftKey: true, altKey: false, metaKey: true, ctrlKey: false,
+      })
+    ).toBe(true);
+    // The previous Alt+Shift+Y should no longer fire.
+    expect(
+      isToggleShortcut({
+        code: 'KeyY',
+        shiftKey: true, altKey: true, metaKey: false, ctrlKey: false,
+      })
+    ).toBe(false);
   });
 });
 

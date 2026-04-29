@@ -62,6 +62,7 @@ globalThis.chrome = {
   runtime: {
     onMessage: { addListener: vi.fn() },
     onInstalled: { addListener: vi.fn() },
+    sendMessage: vi.fn(async () => ({ shortcut: '' })),
     lastError: null,
   },
   tabs: {
