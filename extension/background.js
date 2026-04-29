@@ -22,6 +22,21 @@ chrome.action.onClicked.addListener((tab) => {
   if (tab?.id) sendToggle(tab.id);
 });
 
+// Reply with the shortcut string currently bound to toggle-translation so the
+// content script can build a fallback keydown matcher for any user-configured
+// combination.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== 'GET_TOGGLE_SHORTCUT') return undefined;
+  chrome.commands
+    .getAll()
+    .then((cmds) => {
+      const target = cmds.find((c) => c.name === 'toggle-translation');
+      sendResponse({ shortcut: target?.shortcut || '' });
+    })
+    .catch(() => sendResponse({ shortcut: '' }));
+  return true;
+});
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     const cmds = await chrome.commands.getAll();
