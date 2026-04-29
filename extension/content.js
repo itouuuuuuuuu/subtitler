@@ -483,18 +483,73 @@ const SELECTION_CONTAINER_ROLES = new Set([
   'menu', 'listbox', 'combobox', 'tree', 'grid',
 ]);
 
-// Class names that hide text from sighted users (Bootstrap, Tailwind, GitHub
-// Primer, etc) via display:none, clip, or off-screen positioning. A
-// translation span injected as a sibling does not inherit those rules and
-// would become visible — the opposite of what the page intends. GitHub uses
-// d-none for hotkey-only anchors like <a class="d-none" data-hotkey>...</a>,
-// where the visible Japanese translation surfaces text the page hid.
-const VISUALLY_HIDDEN_CLASSES = new Set([
-  'sr-only', 'visually-hidden', 'visually-hidden-focusable',
-  'screen-reader-only', 'screen-reader-text',
-  'show-on-focus',
-  'd-none', 'hidden',
+// Exact-match class names that hide text from sighted users but don't
+// follow a generalizable suffix pattern. A translation span injected as a
+// sibling does not inherit those rules and would become visible — the
+// opposite of what the page intends. GitHub uses d-none for hotkey-only
+// anchors like <a class="d-none" data-hotkey>...</a>, where the visible
+// Japanese translation surfaces text the page hid.
+const VISUALLY_HIDDEN_EXACT_CLASSES = new Set([
+  'show-on-focus', // GitHub Primer
+  'd-none',        // Bootstrap
+  'hidden',        // Tailwind base / Bootstrap legacy
 ]);
+
+// Screen-reader-only utility families. Patterns use `(^|[-:])` to capture
+// vendor or Tailwind-prefixed variants (m-sr-only, tw-sr-only) and
+// responsive/state variants (md:sr-only, focus:not-sr-only). `negation`
+// pairs with `positive` so a framework's reverse helper (e.g. Tailwind
+// not-sr-only) can't be missed when adding a new entry.
+//
+// Tailwind variant prefixes (md:, hover:, focus:, dark: …) only apply at
+// matching breakpoints/states, but we treat them as if the variant is
+// active without consulting the viewport. This is correct for desktop
+// viewports — Subtitler's primary target — where md+ patterns dominate
+// real-world responsive nav code (e.g. `sr-only md:not-sr-only` on a
+// link that's a hamburger label on mobile and a visible nav link on
+// desktop). Narrow viewports may produce reversed judgements; a
+// getComputedStyle fallback would fix this at the cost of layout reflow
+// on every element.
+const VISUALLY_HIDDEN_UTILITIES = [
+  // Tailwind / Bootstrap 4 / AWS m-sr-only
+  { positive: /(^|[-:])sr-only(-focusable)?$/,
+    negation: /(^|[-:])not-sr-only(-focusable)?$/ },
+  // Bootstrap 5 / GOV.UK / WHATWG
+  { positive: /(^|[-:])visually-hidden(-focusable)?$/,
+    negation: /(^|[-:])not-visually-hidden(-focusable)?$/ },
+  // WordPress (screen-reader-text), older themes
+  { positive: /(^|[-:])screen-reader(-only|-text)?$/,
+    negation: null },
+];
+
+// Combined alternation regexes built once at module load. Per-class cost
+// drops from up to N positive + N negation tests to one each — meaningful
+// on full DOM walks of large pages.
+const VISUALLY_HIDDEN_POSITIVE_RE = new RegExp(
+  VISUALLY_HIDDEN_UTILITIES.map((u) => u.positive.source).join('|')
+);
+const VISUALLY_HIDDEN_NEGATION_RE = new RegExp(
+  VISUALLY_HIDDEN_UTILITIES
+    .filter((u) => u.negation)
+    .map((u) => u.negation.source)
+    .join('|')
+);
+
+// Negations win and short-circuit: any matching reverse helper means the
+// element is visible at the user's viewport regardless of sibling classes.
+function isVisuallyHiddenByClass(classList) {
+  let hasHidden = false;
+  for (const cls of classList) {
+    if (VISUALLY_HIDDEN_NEGATION_RE.test(cls)) return false;
+    if (
+      !hasHidden &&
+      (VISUALLY_HIDDEN_EXACT_CLASSES.has(cls) || VISUALLY_HIDDEN_POSITIVE_RE.test(cls))
+    ) {
+      hasHidden = true;
+    }
+  }
+  return hasHidden;
+}
 
 // Single subtree-skip predicate. Bundling every "do not translate inside
 // this element" rule here keeps each call site (collectAndInject root +
@@ -505,7 +560,7 @@ const VISUALLY_HIDDEN_CLASSES = new Set([
 //   subtitlerInjected         — our own injected nodes; never recurse in.
 //   contenteditable           — mutating these breaks user input.
 //   SELECTION_CONTAINER_ROLES — menu/listbox descendants are UI labels.
-//   VISUALLY_HIDDEN_CLASSES   — would surface invisible text to sighted users.
+//   isVisuallyHiddenByClass   — would surface invisible text to sighted users.
 function shouldSkipElement(el) {
   if (!el || !el.tagName) return false;
   if (el.hidden) return true;
@@ -518,11 +573,7 @@ function shouldSkipElement(el) {
     if (role === 'tooltip') return true;
     if (role && SELECTION_CONTAINER_ROLES.has(role)) return true;
   }
-  if (el.classList) {
-    for (const cls of el.classList) {
-      if (VISUALLY_HIDDEN_CLASSES.has(cls)) return true;
-    }
-  }
+  if (el.classList && isVisuallyHiddenByClass(el.classList)) return true;
   return false;
 }
 
