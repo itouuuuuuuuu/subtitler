@@ -4,146 +4,147 @@
 
 # subtitler
 
-A Chrome extension that toggles subtitle-style Japanese translations under English sentences on any web page. The original text stays in place, and the translation is rendered just below it — sentence by sentence — so you can read both side by side.
+英語ページの各文の下に、字幕のように日本語訳を表示するトグル式の Chrome 拡張機能です。原文はそのまま残り、訳文は文単位ですぐ下に挿入されるので、両方を並べて読めます。
 
-Translation runs entirely on-device using Chrome's built-in Translator API. Nothing is sent to a remote server.
+翻訳は Chrome 組み込みの Translator API によりすべて端末内で実行され、外部サーバーには一切送信されません。
 
-## Features
+## 特長
 
-- **Toggle on/off with a shortcut** — show or hide translations instantly without reloading the page.
-- **Sentence-level alignment** — translations are inserted right after each English sentence, not as a separate block at the bottom of the page.
-- **Lazy translation via `IntersectionObserver`** — only sentences that enter the viewport are translated, keeping long pages fast and reducing model calls.
-- **Concurrency-limited translation queue** — at most a few sentences are translated in parallel.
-- **Dynamic content support** — a `MutationObserver` picks up text added by SPAs, infinite scroll, etc.
-- **UI-label filtering** — short text inside `<button>`, `role="button"`, standalone `<a>`, `<label>`, `<summary>`, etc. is skipped, so navigation links and button labels stay clean. Hyperlinks whose text is just a URL are also skipped.
-- **Inline-link sentence support** — when a link sits in the middle of a sentence (e.g. `For more information, visit the <a>EC2 M8i instance</a> page.`), the surrounding sentence is translated as a single unit instead of being broken into fragments.
-- **On-device translation** — uses Chrome's `Translator` API (`en` → `ja`); the model is downloaded once on first use.
+- **ショートカットでオン／オフ切り替え** — ページをリロードせずに訳文の表示・非表示を即座に切り替え。
+- **文単位での対応付け** — ページ末尾にまとめて表示するのではなく、英語の各文の直後に訳文を挿入。
+- **`IntersectionObserver` による遅延翻訳** — ビューポートに入った文だけを翻訳するため、長いページでも軽快でモデル呼び出しも抑えられます。
+- **同時実行数を絞った翻訳キュー** — 同時に翻訳される文は最大数件までに制限。
+- **動的コンテンツ対応** — `MutationObserver` により SPA や無限スクロールで追加されたテキストにも追従。
+- **UI ラベルのフィルタ** — `<button>` / `role="button"` / 単独の `<a>` / `<label>` / `<summary>` などの中の短いテキストはスキップし、ナビリンクやボタンのラベルが汚れないようにしています。リンクテキストが URL そのものの場合もスキップします。
+- **インラインリンクを含む文への対応** — 文の途中にリンクがある場合（例: `For more information, visit the <a>EC2 M8i instance</a> page.`）でも、断片に分割せず一つの文として翻訳します。
+- **オンデバイス翻訳** — Chrome の `Translator` API（`en` → `ja`）を使用。モデルは初回利用時に一度だけダウンロードされます。
 
-## Requirements
+## 動作要件
 
-- Chrome **138+** (or any Chromium-based browser of equivalent version) with the Translator API available.
-- The `en` → `ja` translation model. The first run prompts you to download it; subsequent runs use the cached model.
+- Translator API が利用できる Chrome **138+**（または同等バージョンの Chromium 系ブラウザ）。
+- `en` → `ja` の翻訳モデル。初回起動時にダウンロードを促され、以降はキャッシュされたモデルを使用します。
 
-## Installation (unpacked)
+## インストール（unpacked）
 
-1. Clone or download this repository.
-2. Open `chrome://extensions/` (or `arc://extensions/` in Arc).
-3. Enable **Developer mode**.
-4. Click **Load unpacked** and select the `extension/` directory.
+1. このリポジトリを clone するかダウンロードします。
+2. `chrome://extensions/`（Arc の場合は `arc://extensions/`）を開きます。
+3. **デベロッパーモード**を有効にします。
+4. **パッケージ化されていない拡張機能を読み込む** をクリックし、`extension/` ディレクトリを選択します。
 
-## Usage
+## 使い方
 
-- **Keyboard shortcut**: defaults to `Alt+Shift+Y` (macOS: Option+Shift+Y). You can rebind it to any combination from `chrome://extensions/shortcuts`. Press once to translate the current page; press again to hide; press again to show.
-- **Toolbar icon**: clicking the subtitler icon does the same thing as the shortcut.
-- The first translation run on a fresh profile will display a banner asking you to confirm downloading the translation model. Click **Download**, or **Cancel** to abort.
+- **キーボードショートカット**: 既定は `Alt+Shift+Y`（macOS では Option+Shift+Y）。`chrome://extensions/shortcuts` から任意のキーに変更できます。1 回押すと現在のページを翻訳、もう一度押すと非表示、さらにもう一度押すと再表示します。
+- **ツールバーアイコン**: subtitler のアイコンをクリックするとショートカットと同じ動作をします。
+- 新しいプロファイルでの初回翻訳時には、翻訳モデルのダウンロードを確認するバナーが表示されます。**Download** をクリックするか、**Cancel** で中止できます。
 
-### Customizing the shortcut
+### ショートカットのカスタマイズ
 
-You can change the shortcut at `chrome://extensions/shortcuts` (`arc://extensions/shortcuts` in Arc).
+`chrome://extensions/shortcuts`（Arc では `arc://extensions/shortcuts`）からショートカットを変更できます。
 
-> **Arc users**: the extension intentionally captures the shortcut inside the page (via `keydown` on `window`) in addition to registering it through `chrome.commands`. This is because Arc sometimes does not deliver `chrome.commands` events to the extension's service worker. If you change the shortcut in `arc://extensions/shortcuts`, also update the constants `IS_MAC` / `isToggleShortcut` in `extension/content.js` to match — otherwise only the toolbar icon will work for the new key.
+> **Arc 利用者向け**: 本拡張は意図的に `chrome.commands` での登録に加えて、`window` 上の `keydown` でページ内でもショートカットをキャプチャしています。Arc では `chrome.commands` のイベントが拡張の service worker に届かないことがあるためです。`arc://extensions/shortcuts` でショートカットを変更した場合は、`extension/content.js` 内の `IS_MAC` / `isToggleShortcut` 定数も合わせて更新してください。さもないと、新しいキーではツールバーアイコンしか動作しません。
 
-### Pages where it does not run
+### 動作しないページ
 
-Content scripts cannot be injected into:
-- `chrome://` / `arc://` / `about:` pages
-- The Chrome Web Store
-- PDF viewers
-- Pages with a strict CSP that blocks injected scripts
+以下のページではコンテンツスクリプトを注入できません。
 
-## How it works
+- `chrome://` / `arc://` / `about:` ページ
+- Chrome ウェブストア
+- PDF ビューア
+- 注入スクリプトをブロックする厳格な CSP が設定されたページ
 
-1. On toggle, the content script ensures a `Translator` instance exists for `en` → `ja`. If the model is not downloaded yet, it shows a banner that asks for a user gesture to start the download.
-2. It walks `document.body` block by block (`<p>`, `<li>`, `<div>`, etc.), skipping `<script>`, `<style>`, `<code>`, `<pre>`, contenteditable regions, and already-injected nodes.
-3. Within each block, the text from adjacent text nodes and inline elements (`<a>`, `<em>`, …) is concatenated into a flat stream and split into sentences with `Intl.Segmenter`. Sentences that look like UI labels (short text inside buttons / standalone short links / labels / etc.) or whose link text is just a URL are filtered out.
-4. A `<span class="subtitler-loading">Translating...</span>` placeholder is inserted after each remaining sentence.
-5. An `IntersectionObserver` watches each placeholder. When it enters the viewport (with a 200px margin), the sentence is enqueued for translation.
-6. A small queue drains the work with a concurrency cap of 4. Each translated sentence replaces its placeholder with `<span class="subtitler-ja">…</span>`.
-7. A `MutationObserver` catches new DOM nodes added later (SPA navigation, lazy-loaded sections) and runs the same pipeline on them. Self-injected nodes are tracked in a `WeakSet` to avoid feedback loops.
-8. Toggling visibility off/on simply flips inline `display` on every injected element; no re-translation is performed.
+## 仕組み
 
-## File layout
+1. トグル時、コンテンツスクリプトは `en` → `ja` の `Translator` インスタンスがあることを確認します。モデル未ダウンロードの場合は、ユーザー操作によるダウンロード開始を促すバナーを表示します。
+2. `document.body` をブロック単位（`<p>`, `<li>`, `<div>` など）で走査し、`<script>`, `<style>`, `<code>`, `<pre>`、contenteditable 領域、すでに注入済みのノードはスキップします。
+3. 各ブロック内では、隣接するテキストノードとインライン要素（`<a>`, `<em>` など）のテキストを連結したフラットなストリームを `Intl.Segmenter` で文に分割します。UI ラベルらしき文（ボタン内の短いテキスト、単独で短いリンク、ラベル類）や、リンクテキストが URL そのものの文は除外します。
+4. 残った文の直後に `<span class="subtitler-loading">Translating...</span>` のプレースホルダを挿入します。
+5. 各プレースホルダを `IntersectionObserver` で監視し、ビューポートに入った（200px のマージン付き）時点で翻訳キューに投入します。
+6. 同時実行数の上限を 4 とした小さなキューが処理を行い、翻訳結果が返るとプレースホルダを `<span class="subtitler-ja">…</span>` に置き換えます。
+7. `MutationObserver` により後から追加された DOM ノード（SPA のページ遷移、遅延読み込みされたセクションなど）を捕捉し、同じパイプラインで処理します。自身が注入したノードは `WeakSet` で記録してフィードバックループを防ぎます。
+8. 表示のオン／オフ切り替えは、注入済みの全要素のインライン `display` を反転するだけで済み、再翻訳は行いません。
+
+## ファイル構成
 
 ```
 extension/
-  manifest.json   # MV3 manifest, commands, content_scripts
-  background.js   # Service worker: relays the shortcut & toolbar click
-  content.js      # Main logic: collection, translation, observers
-  styles.css      # Subtitle, loading, and banner styles
+  manifest.json   # MV3 マニフェスト、commands、content_scripts
+  background.js   # service worker: ショートカットとツールバークリックを中継
+  content.js      # メインロジック: 収集・翻訳・各種 observer
+  styles.css      # 字幕、ローディング、バナーのスタイル
 tests/
-  setup.mjs       # Browser-API mocks (chrome.*, Translator, IntersectionObserver, requestIdleCallback)
+  setup.mjs       # ブラウザ API のモック (chrome.*, Translator, IntersectionObserver, requestIdleCallback)
   content.test.mjs
   background.test.mjs
 ```
 
-## Testing
+## テスト
 
-The extension ships with a Vitest + jsdom test suite that covers the pure
-helpers (`hasLatinLetter`, `isToggleShortcut`, `shouldTranslate`), the DOM
-pipeline (`processTextNode`, `collectAndInject`, `collectFromTextNode`,
-`replaceLoadingWithTranslation`, `setVisibility`), the toggle state machine
-(`handleToggle`), the `IntersectionObserver`-driven lazy translation flow,
-the in-memory translation cache, the `<option>` skip rule, and the
-idempotent re-scan guarantee that prevents duplicate subtitles when a SPA
-reparents an already-translated subtree.
+本拡張には Vitest + jsdom によるテストスイートが含まれており、純粋な
+ヘルパー（`hasLatinLetter`, `isToggleShortcut`, `shouldTranslate`）、DOM
+パイプライン（`processTextNode`, `collectAndInject`, `collectFromTextNode`,
+`replaceLoadingWithTranslation`, `setVisibility`）、トグルの状態遷移
+（`handleToggle`）、`IntersectionObserver` による遅延翻訳フロー、
+インメモリの翻訳キャッシュ、`<option>` のスキップルール、SPA が翻訳済み
+サブツリーを再配置した際の重複字幕を防ぐべき再走査の冪等性などをカバー
+しています。
 
 ```sh
-npm install         # one-time
-npm test            # run the suite once
-npm run test:watch  # re-run on file changes
+npm install         # 初回のみ
+npm test            # スイートを 1 回実行
+npm run test:watch  # ファイル変更で再実行
 npm run test:coverage
 ```
 
-Browser globals (`chrome.*`, `Translator`, `IntersectionObserver`,
-`requestIdleCallback`) are mocked in `tests/setup.mjs`. Tests load the real
-`extension/content.js` and `extension/background.js` modules; both files
-expose a CommonJS `module.exports` block guarded by `typeof module`, which
-is a no-op in the browser but makes the source units consumable from
-`vitest`.
+ブラウザのグローバル（`chrome.*`, `Translator`, `IntersectionObserver`,
+`requestIdleCallback`）は `tests/setup.mjs` でモック化しています。テストは
+実際の `extension/content.js` と `extension/background.js` モジュールを
+読み込みます。両ファイルとも `typeof module` でガードした CommonJS の
+`module.exports` ブロックを公開しており、ブラウザでは何もしませんが、
+これにより vitest からソースをそのまま利用できます。
 
-## Releasing to the Chrome Web Store
+## Chrome ウェブストアへのリリース
 
-The release pipeline is fully driven by GitHub Actions. There are three workflows:
+リリースパイプラインは GitHub Actions で完全に駆動されています。ワークフローは 3 つあります。
 
-| Workflow | Trigger | What it does |
+| ワークフロー | トリガー | 内容 |
 | --- | --- | --- |
-| `ci.yml` | every PR / push to `main` | runs tests, builds the ZIP, uploads it as an artifact, fails if `package.json` and `extension/manifest.json` versions disagree |
-| `prepare-release.yml` | manual (`workflow_dispatch`) | bumps the version (`patch` / `minor` / `major` / explicit `x.y.z`), runs `scripts/sync-version.mjs` so `manifest.json` matches, opens a `release/vX.Y.Z` PR |
-| `tag-after-merge.yml` + `release.yml` | release PR merged → tag pushed | auto-tags `main` with `vX.Y.Z`, then the tag triggers a build that publishes a GitHub Release with `subtitler-X.Y.Z.zip` attached |
+| `ci.yml` | すべての PR と `main` への push | テスト実行、ZIP のビルド、artifact としてアップロード、`package.json` と `extension/manifest.json` のバージョン不一致は失敗扱い |
+| `prepare-release.yml` | 手動（`workflow_dispatch`） | バージョンを bump（`patch` / `minor` / `major` または明示的な `x.y.z`）、`scripts/sync-version.mjs` で `manifest.json` を同期、`release/vX.Y.Z` PR を作成 |
+| `tag-after-merge.yml` + `release.yml` | リリース PR がマージ → タグ push | `main` に `vX.Y.Z` を自動タグ付け、その後タグをトリガーにビルドが走り `subtitler-X.Y.Z.zip` を添付した GitHub Release を公開 |
 
-### Cutting a release
+### リリース手順
 
-1. **Actions → Prepare release → Run workflow**, choose `patch` / `minor` / `major` (or type `1.2.3`).
-2. Review and merge the auto-opened `Release vX.Y.Z` PR.
-3. Wait ~1 minute for `tag-after-merge.yml` and `release.yml` to finish.
-4. Download `subtitler-X.Y.Z.zip` from the new GitHub Release and upload it at <https://chrome.google.com/webstore/devconsole>.
-5. Fill in the listing using [`STORE_LISTING.md`](STORE_LISTING.md). The privacy policy lives at [`PRIVACY.md`](PRIVACY.md).
+1. **Actions → Prepare release → Run workflow** を選び、`patch` / `minor` / `major` か `1.2.3` のような形式を指定します。
+2. 自動で開く `Release vX.Y.Z` PR を確認してマージします。
+3. `tag-after-merge.yml` と `release.yml` の完了まで約 1 分待ちます。
+4. 新しい GitHub Release から `subtitler-X.Y.Z.zip` をダウンロードし、<https://chrome.google.com/webstore/devconsole> にアップロードします。
+5. ストア情報は [`STORE_LISTING.md`](STORE_LISTING.md) を、プライバシーポリシーは [`PRIVACY.md`](PRIVACY.md) を参照して入力します。
 
-### Local fallback
+### ローカルでのフォールバック
 
-If you ever need to cut a release without GitHub Actions:
+GitHub Actions を使わずにリリースを切る必要がある場合は次のとおりです。
 
 ```sh
-npm version patch       # or minor / major — also runs sync-version.mjs and stages manifest.json
-git push --follow-tags  # push the bump commit and the new tag
+npm version patch       # または minor / major — sync-version.mjs も実行され manifest.json が staged になります
+git push --follow-tags  # bump コミットと新しいタグを push
 ```
 
-The pushed tag triggers `release.yml` on its own. (This commits directly to `main`, so prefer the workflow above.)
+push されたタグだけで `release.yml` が起動します（この方法は `main` に直接コミットするため、上記のワークフローを優先してください）。
 
-### Promo assets
+### プロモアセット
 
-Already generated under `assets/`:
+`assets/` 配下に既に生成済みです。
 
-- `assets/promo-440x280.png` — small promo tile (required by the Web Store).
-- `assets/promo-1400x560.png` — marquee tile (optional; used for featured placement).
+- `assets/promo-440x280.png` — 小サイズのプロモタイル（ウェブストアで必須）。
+- `assets/promo-1400x560.png` — マーキータイル（任意。注目枠への掲載に使用）。
 
-## Privacy
+## プライバシー
 
-- All translation happens locally inside Chrome via the Translator API.
-- The extension does not make any network requests of its own.
-- The only `permissions`-relevant behavior is content script injection on `<all_urls>`, which is required to render translations on the page you are reading.
+- 翻訳はすべて Chrome の Translator API により端末内で行われます。
+- 拡張機能から外部へのネットワークリクエストは行いません。
+- `permissions` に関わる挙動は、`<all_urls>` でのコンテンツスクリプト注入のみで、これは閲覧中のページに翻訳をレンダリングするために必要です。
 
-## Known limitations
+## 既知の制約
 
-- The translation cache is in-memory and unbounded for the lifetime of the page.
-- Languages other than English → Japanese are not supported.
+- 翻訳キャッシュはインメモリで、ページのライフタイム中は上限なく保持されます。
+- 英語 → 日本語以外の言語は対応していません。
