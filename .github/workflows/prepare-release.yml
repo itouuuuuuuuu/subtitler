@@ -1,0 +1,88 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump (patch / minor / major) or explicit version like 1.2.3'
+        required: true
+        default: patch
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -e
+          case "$BUMP" in
+            patch|minor|major)
+              NEW=$(npm --no-git-tag-version version "$BUMP")
+              NEW="${NEW#v}"
+              ;;
+            *)
+              npm --no-git-tag-version version "$BUMP" > /dev/null
+              NEW="$BUMP"
+              ;;
+          esac
+          node scripts/sync-version.mjs
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Bumped to v$NEW"
+
+      - name: Run tests on bumped tree
+        run: npm test
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -e
+          BRANCH="release/v$VERSION"
+          git switch -c "$BRANCH"
+          git add package.json package-lock.json extension/manifest.json
+          git commit -m "chore(release): v$VERSION"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --title "Release v$VERSION" \
+            --base main \
+            --head "$BRANCH" \
+            --body "$(cat <<EOF
+          Bumps version to **v$VERSION**.
+
+          When this PR is merged, the \`tag-after-merge\` workflow will tag the merge commit with \`v$VERSION\`, which triggers \`release.yml\` to build the ZIP and publish a GitHub Release.
+
+          Manual fallback if the auto-tag workflow fails:
+
+          \`\`\`sh
+          git checkout main && git pull
+          git tag v$VERSION
+          git push origin v$VERSION
+          \`\`\`
+          EOF
+          )"

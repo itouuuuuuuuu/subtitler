@@ -6,7 +6,9 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build": "rm -rf dist && mkdir -p dist && cd extension && zip -r -X \"../dist/subtitler-$npm_package_version.zip\" . -x \"*.DS_Store\"",
+    "version": "node scripts/sync-version.mjs && git add extension/manifest.json"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.9",
