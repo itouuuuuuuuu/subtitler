@@ -104,25 +104,25 @@ npm run test:coverage
 
 ## Chrome ウェブストアへのリリース
 
-リリースパイプラインは GitHub Actions で完全に駆動されています。ワークフローは関心事ごとに分離されています。
+リリースは「ローカルで bump → タグ push → GitHub Actions が ZIP を作って Release を公開」というシンプルな流れです。
 
 | ワークフロー | トリガー | 内容 |
 | --- | --- | --- |
 | `ci.yml` | すべての PR と `main` への push | テスト実行、ZIP のビルド、artifact としてアップロード、`package.json` と `extension/manifest.json` のバージョン不一致は失敗扱い |
-| `prepare-release.yml` | 手動（`workflow_dispatch`） | バージョンを bump（未指定なら次の patch、または明示的な `x.y.z`）、`scripts/sync-version.mjs` で `manifest.json` を同期、`release/vX.Y.Z` PR を作成 |
-| `tag-after-merge.yml` | リリース PR がマージ | `main` に `vX.Y.Z` を自動タグ付けし、`release.yml` を `workflow_dispatch` 経由で起動 |
-| `release.yml` | タグ push または手動（`workflow_dispatch`） | 既存タグからビルドし、`subtitler-X.Y.Z.zip` を添付した GitHub Release を公開 |
-| `build-zip.yml` | 手動（`workflow_dispatch`） | 既存タグから ZIP のみをビルドし、ワークフローの artifact としてダウンロード可能にする（GitHub Release は作成しない） |
-
-> `tag-after-merge.yml` がタグ push 後に `release.yml` を明示的に dispatch するのは、`GITHUB_TOKEN` が push したタグでは下流ワークフローが起動しないという GitHub Actions の仕様を回避するためです。
+| `release.yml` | タグ push（`v*`）または手動（`workflow_dispatch`） | 対象タグからビルドし、`subtitler-X.Y.Z.zip` を添付した GitHub Release を公開 |
+| `build-zip.yml` | 手動（`workflow_dispatch`） | 対象タグから ZIP のみをビルドし、ワークフローの artifact としてダウンロード可能にする（Release は作成しない） |
 
 ### リリース手順
 
-1. **Actions → Prepare release → Run workflow** を選びます。`version` は空のままなら次の patch、または `1.2.3` のような明示的な値を指定できます。
-2. 自動で開く `Release vX.Y.Z` PR を確認してマージします。
-3. `tag-after-merge.yml` と `release.yml` の完了まで数十秒〜1 分待ちます。
-4. 新しい GitHub Release から `subtitler-X.Y.Z.zip` をダウンロードし、<https://chrome.google.com/webstore/devconsole> にアップロードします。
-5. ストア情報は [`STORE_LISTING.md`](STORE_LISTING.md) を、プライバシーポリシーは [`PRIVACY.md`](PRIVACY.md) を参照して入力します。
+```sh
+git checkout main && git pull
+npm version patch       # または minor / major — package.json と manifest.json を bump、コミット、タグ作成
+git push --follow-tags  # bump コミットとタグを push
+```
+
+タグ push が `release.yml` を起動し、数十秒で GitHub Release と `subtitler-X.Y.Z.zip` が公開されます。あとは <https://chrome.google.com/webstore/devconsole> に ZIP をアップロードしてください。ストア情報は [`STORE_LISTING.md`](STORE_LISTING.md)、プライバシーポリシーは [`PRIVACY.md`](PRIVACY.md) を参照。
+
+`npm version` は `version` ライフサイクルで `scripts/sync-version.mjs` を呼び、`extension/manifest.json` も同じバージョンに揃えてくれます。
 
 ### 既存バージョンの ZIP を取得する
 
@@ -130,18 +130,7 @@ npm run test:coverage
 
 ### 既存タグからリリースを再作成する
 
-何らかの理由で `release.yml` が走らなかった、もしくは Release を作り直したい場合は **Actions → Release → Run workflow** で対象バージョンを指定して手動実行できます。タグは事前に存在している必要があります。
-
-### ローカルでのフォールバック
-
-GitHub Actions を使わずにリリースを切る必要がある場合は次のとおりです。
-
-```sh
-npm version patch       # または minor / major — sync-version.mjs も実行され manifest.json が staged になります
-git push --follow-tags  # bump コミットと新しいタグを push
-```
-
-push されたタグで `release.yml` が起動します（この方法は `main` に直接コミットするため、上記のワークフローを優先してください）。
+何らかの理由で `release.yml` が失敗した、もしくは Release を作り直したい場合は **Actions → Release → Run workflow** で対象バージョンを指定して手動実行できます。タグは事前に存在している必要があります。
 
 ### プロモアセット
 
