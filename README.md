@@ -11,7 +11,7 @@ Translation runs entirely on-device using Chrome's built-in Translator API. Noth
 ## Demo
 
 <p align="center">
-  <video src="https://github.com/itouuuuuuuuu/subtitler/raw/main/assets/demo.mp4" controls muted playsinline width="720"></video>
+  <video src="https://github.com/user-attachments/assets/90fb08d3-9b54-404b-aa42-f1ad8c758070" controls muted playsinline width="720"></video>
 </p>
 
 ## Features
