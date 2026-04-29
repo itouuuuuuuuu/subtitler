@@ -11,7 +11,8 @@ Translation runs entirely on-device using Chrome's built-in Translator API. Noth
 - **Lazy translation via `IntersectionObserver`** — only sentences that enter the viewport are translated, keeping long pages fast and reducing model calls.
 - **Concurrency-limited translation queue** — at most a few sentences are translated in parallel.
 - **Dynamic content support** — a `MutationObserver` picks up text added by SPAs, infinite scroll, etc.
-- **UI-label filtering** — short text inside `<button>`, `role="button"`, `<a>`, `<label>`, `<summary>`, etc. is skipped, so navigation links and button labels stay clean.
+- **UI-label filtering** — short text inside `<button>`, `role="button"`, standalone `<a>`, `<label>`, `<summary>`, etc. is skipped, so navigation links and button labels stay clean. Hyperlinks whose text is just a URL are also skipped.
+- **Inline-link sentence support** — when a link sits in the middle of a sentence (e.g. `For more information, visit the <a>EC2 M8i instance</a> page.`), the surrounding sentence is translated as a single unit instead of being broken into fragments.
 - **On-device translation** — uses Chrome's `Translator` API (`en` → `ja`); the model is downloaded once on first use.
 
 ## Requirements
@@ -49,8 +50,8 @@ Content scripts cannot be injected into:
 ## How it works
 
 1. On toggle, the content script ensures a `Translator` instance exists for `en` → `ja`. If the model is not downloaded yet, it shows a banner that asks for a user gesture to start the download.
-2. It walks `document.body` with a `TreeWalker`, skipping `<script>`, `<style>`, `<code>`, `<pre>`, contenteditable regions, and already-injected nodes.
-3. Each text node is split into sentences using `Intl.Segmenter`. Sentences that look like UI labels (short text inside buttons / links / labels / etc.) are filtered out.
+2. It walks `document.body` block by block (`<p>`, `<li>`, `<div>`, etc.), skipping `<script>`, `<style>`, `<code>`, `<pre>`, contenteditable regions, and already-injected nodes.
+3. Within each block, the text from adjacent text nodes and inline elements (`<a>`, `<em>`, …) is concatenated into a flat stream and split into sentences with `Intl.Segmenter`. Sentences that look like UI labels (short text inside buttons / standalone short links / labels / etc.) or whose link text is just a URL are filtered out.
 4. A `<span class="subtitler-loading">Translating...</span>` placeholder is inserted after each remaining sentence.
 5. An `IntersectionObserver` watches each placeholder. When it enters the viewport (with a 200px margin), the sentence is enqueued for translation.
 6. A small queue drains the work with a concurrency cap of 4. Each translated sentence replaces its placeholder with `<span class="subtitler-ja">…</span>`.
@@ -104,6 +105,5 @@ is a no-op in the browser but makes the source units consumable from
 
 ## Known limitations
 
-- Sentences that span multiple inline elements (e.g. `<p>This is <em>great</em> news.</p>`) are segmented per text node, which may produce sub-sentence translation requests.
 - The translation cache is in-memory and unbounded for the lifetime of the page.
 - Languages other than English → Japanese are not supported.
