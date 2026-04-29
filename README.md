@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="extension/icons/icon-128.png" alt="subtitler icon" width="128" height="128">
+</p>
+
 # subtitler
 
 A Chrome extension that toggles subtitle-style Japanese translations under English sentences on any web page. The original text stays in place, and the translation is rendered just below it — sentence by sentence — so you can read both side by side.
