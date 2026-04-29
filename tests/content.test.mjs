@@ -940,6 +940,51 @@ describe('collectAndInject', () => {
     expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
   });
 
+  it('skips Tailwind-prefixed sr-only utilities (e.g. AWS m-sr-only)', () => {
+    document.body.innerHTML =
+      '<a class="m-sr-only m-sr-only-focusable m-skip-el" href="#main">Skip to main content</a>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips Bootstrap visually-hidden-focusable links', () => {
+    document.body.innerHTML =
+      '<a class="visually-hidden-focusable" href="#main">Skip to main content</a>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips WordPress screen-reader-text spans', () => {
+    document.body.innerHTML =
+      '<span class="screen-reader-text">Skip to main content quickly</span>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('skips Tailwind responsive sr-only variants like md:sr-only', () => {
+    document.body.innerHTML =
+      '<a class="md:sr-only" href="#main">Skip to main content</a>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
+  it('does not skip when Tailwind not-sr-only reverses the hidden helper', () => {
+    document.body.innerHTML =
+      '<span class="sr-only md:not-sr-only">Open in a new tab quickly please</span>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBeGreaterThan(0);
+  });
+
   it('skips already-injected subtrees', () => {
     document.body.innerHTML =
       '<p data-subtitler-injected="true">Hello world today is fine.</p>';
