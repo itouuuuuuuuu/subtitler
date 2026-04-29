@@ -420,9 +420,7 @@ async function translateOne({ loading, sentence }) {
 function collectAndInject(root, options = {}) {
   if (!root || !root.nodeType) return 0;
   if (root.nodeType === Node.ELEMENT_NODE) {
-    if (SKIP_TAGS.has(root.tagName)) return 0;
-    if (root.dataset?.subtitlerInjected === 'true') return 0;
-    if (isContentEditableNode(root)) return 0;
+    if (shouldSkipElement(root)) return 0;
     // MutationObserver may hand us a freshly-added element that is itself
     // benign but lives inside an excluded subtree (a code highlighter span
     // appearing inside <code>, a node added inside a contenteditable region,
@@ -430,9 +428,7 @@ function collectAndInject(root, options = {}) {
     // ancestor chain so we don't drop translation spans into those.
     let p = root.parentElement;
     while (p) {
-      if (SKIP_TAGS.has(p.tagName)) return 0;
-      if (p.dataset && p.dataset.subtitlerInjected === 'true') return 0;
-      if (isContentEditableNode(p)) return 0;
+      if (shouldSkipElement(p)) return 0;
       p = p.parentElement;
     }
   }
@@ -446,9 +442,7 @@ function collectFromTextNode(textNode, options = {}) {
   if (processedTextNodes.has(textNode)) return 0;
   let p = textNode.parentElement;
   while (p) {
-    if (SKIP_TAGS.has(p.tagName)) return 0;
-    if (p.dataset && p.dataset.subtitlerInjected === 'true') return 0;
-    if (isContentEditableNode(p)) return 0;
+    if (shouldSkipElement(p)) return 0;
     p = p.parentElement;
   }
   return processBlock(processingBlockFor(textNode), {
@@ -480,6 +474,56 @@ function isContentEditableNode(el) {
   if (el.isContentEditable) return true;
   const attr = el.getAttribute('contenteditable');
   return attr === 'true' || attr === 'plaintext-only';
+}
+
+// Containers whose descendants are UI affordances (menu items, listbox
+// options, etc.) rather than prose. Their text is short action labels and
+// translating them produces noisy duplicate Japanese next to controls.
+const SELECTION_CONTAINER_ROLES = new Set([
+  'menu', 'listbox', 'combobox', 'tree', 'grid',
+]);
+
+// Class names that hide text from sighted users (Bootstrap, Tailwind, GitHub
+// Primer, etc) via display:none, clip, or off-screen positioning. A
+// translation span injected as a sibling does not inherit those rules and
+// would become visible — the opposite of what the page intends. GitHub uses
+// d-none for hotkey-only anchors like <a class="d-none" data-hotkey>...</a>,
+// where the visible Japanese translation surfaces text the page hid.
+const VISUALLY_HIDDEN_CLASSES = new Set([
+  'sr-only', 'visually-hidden', 'visually-hidden-focusable',
+  'screen-reader-only', 'screen-reader-text',
+  'show-on-focus',
+  'd-none', 'hidden',
+]);
+
+// Single subtree-skip predicate. Bundling every "do not translate inside
+// this element" rule here keeps each call site (collectAndInject root +
+// ancestor walk, collectFromTextNode ancestor walk, processBlock per-child)
+// to one branch and reads role= once per element on the hot DOM walk.
+// Reasons inline:
+//   <tool-tip> / role=tooltip — duplicates the trigger label.
+//   subtitlerInjected         — our own injected nodes; never recurse in.
+//   contenteditable           — mutating these breaks user input.
+//   SELECTION_CONTAINER_ROLES — menu/listbox descendants are UI labels.
+//   VISUALLY_HIDDEN_CLASSES   — would surface invisible text to sighted users.
+function shouldSkipElement(el) {
+  if (!el || !el.tagName) return false;
+  if (el.hidden) return true;
+  if (SKIP_TAGS.has(el.tagName)) return true;
+  if (el.tagName === 'TOOL-TIP') return true;
+  if (el.dataset && el.dataset.subtitlerInjected === 'true') return true;
+  if (isContentEditableNode(el)) return true;
+  if (el.getAttribute) {
+    const role = el.getAttribute('role');
+    if (role === 'tooltip') return true;
+    if (role && SELECTION_CONTAINER_ROLES.has(role)) return true;
+  }
+  if (el.classList) {
+    for (const cls of el.classList) {
+      if (VISUALLY_HIDDEN_CLASSES.has(cls)) return true;
+    }
+  }
+  return false;
 }
 
 // Walk a block element, splitting its inline content into "runs" of adjacent
@@ -518,11 +562,7 @@ function processBlock(block, options = {}) {
     // content silently elided (e.g. a <textarea> between two prose halves
     // would produce "Type something  to continue please."). Inline code-like
     // tags are handled separately below: their text DOES join the run.
-    if (
-      SKIP_TAGS.has(node.tagName) ||
-      (node.dataset && node.dataset.subtitlerInjected === 'true') ||
-      isContentEditableNode(node)
-    ) {
+    if (shouldSkipElement(node)) {
       flushRun();
       return;
     }
