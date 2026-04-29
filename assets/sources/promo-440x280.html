@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>subtitler — promo 440x280</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+      }
+      body {
+        width: 440px;
+        height: 280px;
+        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+        color: #111111;
+        box-sizing: border-box;
+        padding: 22px 26px;
+      }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+      .title {
+        font-size: 38px;
+        font-weight: 500;
+        line-height: 1;
+        letter-spacing: -1px;
+        margin: 0;
+      }
+      .icon {
+        width: 56px;
+        height: 56px;
+        flex-shrink: 0;
+      }
+      .icon img {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .pair + .pair {
+        margin-top: 10px;
+      }
+      .pair-en {
+        font-size: 15px;
+        line-height: 1.3;
+        color: #111111;
+        margin: 0 0 2px;
+      }
+      .pair-ja {
+        font-size: 13px;
+        line-height: 1.45;
+        color: #888888;
+        font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="title">subtitler</div>
+      <div class="icon"><img src="../icon.png" alt="" /></div>
+    </div>
+    <div class="pair">
+      <div class="pair-en">Shows a Japanese translation under each English sentence.</div>
+      <div class="pair-ja">英文の下部に日本語訳を表示します。</div>
+    </div>
+    <div class="pair">
+      <div class="pair-en">Toggle it with a shortcut.</div>
+      <div class="pair-ja">ショートカットキーでトグルします。</div>
+    </div>
+    <div class="pair">
+      <div class="pair-en">Just like the line you're reading now.</div>
+      <div class="pair-ja">まさに今読んでいる文のように。</div>
+    </div>
+  </body>
+</html>
