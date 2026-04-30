@@ -940,6 +940,15 @@ describe('collectAndInject', () => {
     expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
   });
 
+  it('skips MediaWiki (Wikipedia) mw-jump-link skip links', () => {
+    document.body.innerHTML =
+      '<a class="mw-jump-link" href="#bodyContent">Jump to content</a>';
+    state.visible = true;
+    const count = collectAndInject(document.body);
+    expect(count).toBe(0);
+    expect(document.querySelectorAll('.subtitler-loading').length).toBe(0);
+  });
+
   it('skips Tailwind-prefixed sr-only utilities (e.g. AWS m-sr-only)', () => {
     document.body.innerHTML =
       '<a class="m-sr-only m-sr-only-focusable m-skip-el" href="#main">Skip to main content</a>';

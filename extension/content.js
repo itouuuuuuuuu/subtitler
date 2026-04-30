@@ -493,6 +493,7 @@ const VISUALLY_HIDDEN_EXACT_CLASSES = new Set([
   'show-on-focus', // GitHub Primer
   'd-none',        // Bootstrap
   'hidden',        // Tailwind base / Bootstrap legacy
+  'mw-jump-link',  // MediaWiki (Wikipedia) — focus-only "Jump to content" links
 ]);
 
 // Screen-reader-only utility families. Patterns use `(^|[-:])` to capture
