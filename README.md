@@ -33,13 +33,13 @@
 
 ## 使い方
 
-- **キーボードショートカット**: 既定は `Alt+Shift+Y`（macOS では Option+Shift+Y）。`chrome://extensions/shortcuts` から任意のキーに変更できます。1 回押すと現在のページを翻訳、もう一度押すと非表示、さらにもう一度押すと再表示します。
+- **キーボードショートカット**: 既定は `Alt+Shift+Y`（macOS では Option+Shift+Y）。1 回押すと現在のページを翻訳、もう一度押すと非表示、さらにもう一度押すと再表示します。`chrome://extensions/shortcuts`（Arc では `arc://extensions/shortcuts`）から任意のキーに変更できます。
 - **ツールバーアイコン**: subtitler のアイコンをクリックするとショートカットと同じ動作をします。
-- 新しいプロファイルでの初回翻訳時には、翻訳モデルのダウンロードを確認するバナーが表示されます。**Download** をクリックするか、**Cancel** で中止できます。
+- **初回ダウンロード**: 新しいプロファイルでの初回翻訳時には、翻訳モデルのダウンロードを確認するバナーが表示されます。**Download** をクリックするか、**Cancel** で中止できます。
 
-### ショートカットのカスタマイズ
+### ダウンロード済み翻訳モデルの削除
 
-`chrome://extensions/shortcuts`（Arc では `arc://extensions/shortcuts`）からショートカットを変更できます。
+ダウンロード済みの翻訳モデルを削除して再ダウンロードの挙動を確認したい場合は、`chrome://on-device-translation-internals/` を開き、`en` → `ja` のエントリで **Uninstall** をクリックします。次回トグル時に再びダウンロード確認バナーが表示されます。
 
 ### 動作しないページ
 
@@ -49,6 +49,24 @@
 - Chrome ウェブストア
 - PDF ビューア
 - 注入スクリプトをブロックする厳格な CSP が設定されたページ
+
+## プライバシー
+
+- 翻訳はすべて Chrome の Translator API により端末内で行われます。
+- 拡張機能から外部へのネットワークリクエストは行いません。
+- `permissions` に関わる挙動は、`<all_urls>` でのコンテンツスクリプト注入のみで、これは閲覧中のページに翻訳をレンダリングするために必要です。
+
+## 既知の制約
+
+- 翻訳キャッシュはインメモリで、ページのライフタイム中は上限なく保持されます。
+- 英語 → 日本語以外の言語は対応していません。
+- **デスクトップビューポート前提**: 視覚的に隠された要素のスキップ判定で Tailwind の variant prefix（`md:sr-only`、`focus:not-sr-only` など）はクラス名のみで判断し、現在の breakpoint/状態は確認しません。デスクトップ幅では実用上問題ありませんが、ブラウザ幅を狭めて使用した場合に variant が一致しないクラスで判定が反転することがあります。
+
+---
+
+# 開発者向け
+
+ここから先は拡張機能の開発・テスト・リリース運用に関する情報です。拡張機能を使うだけなら読む必要はありません。
 
 ## 仕組み
 
@@ -77,14 +95,15 @@ tests/
 
 ## テスト
 
-本拡張には Vitest + jsdom によるテストスイートが含まれており、純粋な
-ヘルパー（`hasLatinLetter`, `isToggleShortcut`, `shouldTranslate`）、DOM
-パイプライン（`processTextNode`, `collectAndInject`, `collectFromTextNode`,
-`replaceLoadingWithTranslation`, `setVisibility`）、トグルの状態遷移
-（`handleToggle`）、`IntersectionObserver` による遅延翻訳フロー、
-インメモリの翻訳キャッシュ、`<option>` のスキップルール、SPA が翻訳済み
-サブツリーを再配置した際の重複字幕を防ぐべき再走査の冪等性などをカバー
-しています。
+Vitest + jsdom によるテストスイートを同梱しています。カバー範囲は以下のとおりです。
+
+- 純粋なヘルパー（`hasLatinLetter`, `isToggleShortcut`, `shouldTranslate`）
+- DOM パイプライン（`processTextNode`, `collectAndInject`, `collectFromTextNode`, `replaceLoadingWithTranslation`, `setVisibility`）
+- トグルの状態遷移（`handleToggle`）
+- `IntersectionObserver` による遅延翻訳フロー
+- インメモリの翻訳キャッシュ
+- `<option>` のスキップルール
+- SPA が翻訳済みサブツリーを再配置した際の、重複字幕を防ぐべき再走査の冪等性
 
 ```sh
 npm install         # 初回のみ
@@ -93,12 +112,7 @@ npm run test:watch  # ファイル変更で再実行
 npm run test:coverage
 ```
 
-ブラウザのグローバル（`chrome.*`, `Translator`, `IntersectionObserver`,
-`requestIdleCallback`）は `tests/setup.mjs` でモック化しています。テストは
-実際の `extension/content.js` と `extension/background.js` モジュールを
-読み込みます。両ファイルとも `typeof module` でガードした CommonJS の
-`module.exports` ブロックを公開しており、ブラウザでは何もしませんが、
-これにより vitest からソースをそのまま利用できます。
+ブラウザのグローバル（`chrome.*`, `Translator`, `IntersectionObserver`, `requestIdleCallback`）は `tests/setup.mjs` でモック化しています。テストは実際の `extension/content.js` と `extension/background.js` モジュールを読み込みます。両ファイルとも `typeof module` でガードした CommonJS の `module.exports` ブロックを公開しており、ブラウザでは何もしませんが、これにより vitest からソースをそのまま利用できます。
 
 ## Chrome ウェブストアへのリリース
 
@@ -136,15 +150,3 @@ git push --follow-tags  # bump コミットとタグを push
 
 - `assets/promo-440x280.png` — 小サイズのプロモタイル（ウェブストアで必須）。
 - `assets/promo-1400x560.png` — マーキータイル（任意。注目枠への掲載に使用）。
-
-## プライバシー
-
-- 翻訳はすべて Chrome の Translator API により端末内で行われます。
-- 拡張機能から外部へのネットワークリクエストは行いません。
-- `permissions` に関わる挙動は、`<all_urls>` でのコンテンツスクリプト注入のみで、これは閲覧中のページに翻訳をレンダリングするために必要です。
-
-## 既知の制約
-
-- 翻訳キャッシュはインメモリで、ページのライフタイム中は上限なく保持されます。
-- 英語 → 日本語以外の言語は対応していません。
-- **デスクトップビューポート前提**: 視覚的に隠された要素のスキップ判定で Tailwind の variant prefix（`md:sr-only`、`focus:not-sr-only` など）はクラス名のみで判断し、現在の breakpoint/状態は確認しません。デスクトップ幅では実用上問題ありませんが、ブラウザ幅を狭めて使用した場合に variant が一致しないクラスで判定が反転することがあります。
