@@ -58,7 +58,7 @@
 
 ## サポート
 
-本拡張機能は無料で配布されています。継続的な開発・メンテナンスを支援していただける方は <https://itouuuuuuuuu.github.io/sponsor.html> をご覧ください。Ko-fi 経由で任意の寄付を受け付けています（リポジトリ右上の **Sponsor** ボタンからもアクセスできます）。
+本拡張機能は無料で配布されています。継続的な開発・メンテナンスを支援していただける方は、リポジトリ右上の **Sponsor** ボタン、または <https://github.com/sponsors/itouuuuuuuuu> から GitHub Sponsors 経由で寄付できます。
 
 ## 既知の制約
 
