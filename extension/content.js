@@ -291,7 +291,7 @@ function waitForGestureAndCreate() {
               m.addEventListener('downloadprogress', (e) => {
                 const pct = Math.round((e.loaded ?? 0) * 100);
                 console.info('[subtitler] Model download progress:', pct + '%');
-                showBanner(`Downloading translation model... ${pct}%`);
+                showBanner(`翻訳モデルをダウンロード中... ${pct}%`);
               });
             },
           });
@@ -300,7 +300,7 @@ function waitForGestureAndCreate() {
           reject(e);
           return;
         }
-        showBanner('Downloading translation model... 0%');
+        showBanner('翻訳モデルをダウンロード中... 0%');
         createPromise
           .then((t) => {
             console.info('[subtitler] Translator ready');
@@ -768,7 +768,7 @@ function applyInsertions(textNode, inserts, opts = {}) {
     loading.className = 'subtitler-loading';
     loading.dataset.subtitlerInjected = 'true';
     loading.dataset.subtitlerSentence = ins.sentence;
-    loading.textContent = 'Translating...';
+    loading.textContent = '翻訳中...';
     if (!state.visible) loading.style.display = 'none';
     fragment.appendChild(loading);
     newNodes.push(loading);
@@ -950,16 +950,16 @@ function showDownloadBanner(onDownload, onCancel) {
   ownInsertions.add(banner);
 
   const label = document.createElement('span');
-  label.textContent = 'subtitler: Translation model needs to be downloaded.';
+  label.textContent = 'subtitler: 翻訳モデルのダウンロードが必要です。';
 
   const downloadBtn = document.createElement('button');
   downloadBtn.className = 'subtitler-banner-btn';
-  downloadBtn.textContent = 'Download';
+  downloadBtn.textContent = 'ダウンロード';
   downloadBtn.dataset.subtitlerInjected = 'true';
 
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'subtitler-banner-btn';
-  cancelBtn.textContent = 'Cancel';
+  cancelBtn.textContent = 'キャンセル';
   cancelBtn.dataset.subtitlerInjected = 'true';
 
   downloadBtn.addEventListener('click', () => {

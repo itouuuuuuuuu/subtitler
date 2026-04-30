@@ -2,10 +2,10 @@
   "manifest_version": 3,
   "name": "subtitler",
   "version": "1.0.0",
-  "description": "Chrome extension that toggles subtitle-style Japanese translations under English sentences (Alt+Shift+Y).",
+  "description": "英語の各文の下に日本語訳を字幕のように表示する Chrome 拡張機能。ショートカット（Alt+Shift+Y）でオン／オフを切り替えできます。",
   "minimum_chrome_version": "138",
   "action": {
-    "default_title": "subtitler: toggle translations (Alt+Shift+Y)",
+    "default_title": "subtitler: 日本語字幕の表示を切り替え（Alt+Shift+Y）",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
@@ -42,7 +42,7 @@
         "default": "Alt+Shift+Y",
         "mac": "Alt+Shift+Y"
       },
-      "description": "Toggle translations on/off"
+      "description": "翻訳の表示／非表示を切り替え"
     }
   }
 }

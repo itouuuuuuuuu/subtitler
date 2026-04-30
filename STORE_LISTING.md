@@ -1,105 +1,110 @@
-# Chrome Web Store submission notes
+# Chrome ウェブストア 申請メモ
 
-Copy-paste-ready content for the Chrome Web Store Developer Dashboard. Update only after you change the actual extension behavior.
-
----
-
-## Item details
-
-### Name (max 75 chars)
-
-```
-subtitler — Japanese subtitles for English pages
-```
-
-### Summary / short description (max 132 chars)
-
-```
-Show Japanese subtitles under each English sentence on any page. Toggle with a shortcut. Translation runs on-device.
-```
-
-### Detailed description (max 16,000 chars)
-
-```
-subtitler shows a Japanese translation directly under each English sentence on the page you are reading, like subtitles on a video. The original text stays in place, so you can read both languages side by side without losing context.
-
-Press Alt+Shift+Y (Option+Shift+Y on macOS) — or click the toolbar icon — to toggle translations on or off. No reload required.
-
-Why subtitler
-
-- Sentence-level alignment. Translations are inserted right after each English sentence, not as a separate block at the bottom of the page. The reading flow stays natural.
-- On-device translation. Uses Chrome's built-in Translator API (en → ja). Nothing is sent to a remote server. The model is downloaded once on first use, then cached.
-- Lazy. Only sentences that enter the viewport are translated, so long pages stay fast.
-- SPA-friendly. New content added by single-page apps and infinite scroll is picked up automatically.
-- UI-aware. Short text inside buttons, navigation links, labels, and similar UI chrome is skipped, so the page does not get cluttered with redundant translations.
-- Inline-link aware. When a hyperlink sits in the middle of a sentence, the surrounding sentence is translated as a single unit instead of being broken into fragments.
-
-Requirements
-
-- Chrome 138 or later (or any Chromium-based browser of equivalent version) with the Translator API available.
-- The en → ja translation model. The first run shows a banner asking you to confirm the model download.
-
-Where it does not run
-
-Content scripts cannot be injected into chrome:// pages, the Chrome Web Store, PDF viewers, or pages with a strict CSP that blocks injected scripts.
-
-Privacy
-
-All translation happens locally inside Chrome via the Translator API. The extension does not make any network requests of its own and does not collect, store, or transmit any user data.
-
-Open source
-
-Source code: https://github.com/itouuuuuuuuu/subtitler
-Issues / feature requests are welcome.
-```
-
-### Category
-
-`Productivity` (alternate: `Accessibility`)
-
-### Language
-
-`English` (primary). Japanese localization can be added later.
+Chrome ウェブストアのデベロッパーダッシュボードにそのままコピー＆ペーストできる、申請用のテキスト一式です。拡張機能の挙動が変わったときだけ更新してください。
 
 ---
 
-## Privacy practices
+## アイテムの詳細
 
-### Single purpose
+### 名前（最大 75 文字）
 
 ```
-Display Japanese subtitle-style translations beneath English sentences on the active web page, using Chrome's on-device Translator API.
+subtitler — 英語ページに日本語の字幕を表示
 ```
 
-### Permission justification
+### 概要 / 短い説明（最大 132 文字）
 
-| Permission | Justification |
+```
+英語の各文の下に日本語訳を字幕のように表示します。ショートカットでオン／オフ切り替え。翻訳は端末内（オンデバイス）で実行されます。
+```
+
+### 詳細な説明（最大 16,000 文字）
+
+```
+subtitler は、いま読んでいるページの英文の下に、動画の字幕のように日本語訳を直接表示する Chrome 拡張機能です。原文はそのまま残るため、文脈を失わずに英文と日本語訳を並べて読むことができます。
+
+Alt+Shift+Y（macOS では Option+Shift+Y）を押すか、ツールバーのアイコンをクリックすると、翻訳の表示と非表示を切り替えられます。ページのリロードは不要です。
+
+subtitler の特長
+
+- 文単位での対応付け。ページ末尾にまとめて表示するのではなく、英文の各文の直後に訳文を挿入します。読書の流れを途切れさせません。
+- オンデバイス翻訳。Chrome 組み込みの Translator API（en → ja）を使用し、ページの内容を外部サーバーへ送信することはありません。翻訳モデルは初回利用時に一度だけダウンロードされ、以降はキャッシュされます。
+- 遅延翻訳。ビューポートに入った文だけを翻訳するため、長いページでも軽快に動作します。
+- SPA 対応。シングルページアプリや無限スクロールで後から追加されたコンテンツも自動的に検出して翻訳します。
+- UI ラベルのフィルタ。ボタン・ナビゲーションリンク・ラベルなど短い UI 要素のテキストはスキップするため、ページが冗長な訳文で埋め尽くされません。
+- インラインリンクへの対応。文の途中にハイパーリンクが含まれていても、断片に分割せず一つの文として翻訳します。
+
+動作要件
+
+- Translator API が利用できる Chrome 138 以降（または同等バージョンの Chromium 系ブラウザ）。
+- en → ja の翻訳モデル。初回起動時にダウンロードを確認するバナーが表示されます。
+
+動作しないページ
+
+コンテンツスクリプトを注入できないため、以下のページでは動作しません。
+
+- chrome:// ページ
+- Chrome ウェブストア
+- PDF ビューア
+- 注入スクリプトをブロックする厳格な CSP が設定されたページ
+
+プライバシー
+
+翻訳はすべて Chrome の Translator API により端末内で行われます。本拡張機能から外部へのネットワークリクエストは一切行わず、ユーザーデータの収集・保存・送信もありません。
+
+オープンソース
+
+ソースコード: https://github.com/itouuuuuuuuu/subtitler
+不具合報告・機能要望は GitHub の Issue へお願いします。
+```
+
+### カテゴリ
+
+`仕事効率化`（代替: `ユーザー補助機能`）
+
+### 言語
+
+`日本語`（プライマリ）。
+
+---
+
+## プライバシーに関する慣行
+
+### 単一の目的（Single purpose）
+
+```
+閲覧中のウェブページにおいて、Chrome 組み込みのオンデバイス Translator API を用いて、英文の各文の下に日本語訳を字幕のように表示します。
+```
+
+### 権限の正当性（Permission justification）
+
+| 権限 | 正当性 |
 | --- | --- |
-| `host_permissions` / `content_scripts` matches `<all_urls>` | The extension renders subtitles inside the page the user is actively reading. The user opts in explicitly per page by pressing the configured keyboard shortcut or clicking the toolbar icon; no work is performed until then. The feature must work on arbitrary sites the user reads, which is why a narrower match pattern is not viable. |
+| `host_permissions` / `content_scripts` の matches `<all_urls>` | ユーザーが現在読んでいるページに字幕を描画するために必要です。動作はユーザーがキーボードショートカットを押す、もしくはツールバーアイコンをクリックして明示的にオプトインしたときのみで、それまで何の処理も行いません。ユーザーが任意のサイトで読書中に利用する機能であるため、より狭いマッチパターンでは要件を満たせません。 |
 
-No other permissions are requested. There is no `tabs`, `storage`, `cookies`, `webRequest`, `scripting`, or remote-host permission.
+そのほかの権限は要求していません。`tabs` / `storage` / `cookies` / `webRequest` / `scripting` / リモートホストの権限はいずれも使用しません。
 
-### Data usage disclosures (Privacy tab → "Data usage")
+### データ使用に関する開示（Privacy タブ → "Data usage"）
 
-Check **none** for every category:
+すべてのカテゴリで **none（いいえ）** を選択：
 
-- Personally identifiable information: **No**
-- Health information: **No**
-- Financial / payment information: **No**
-- Authentication information: **No**
-- Personal communications: **No**
-- Location: **No**
-- Web history: **No**
-- User activity: **No**
-- Website content: **No** — page text is read in-process to insert subtitles, but it is **not transmitted off the device** (Translator API runs locally) and is not stored.
+- 個人を特定できる情報（PII）: **No**
+- 健康情報: **No**
+- 金融・決済情報: **No**
+- 認証情報: **No**
+- 個人的な通信内容: **No**
+- 位置情報: **No**
+- ウェブ履歴: **No**
+- ユーザーアクティビティ: **No**
+- ウェブサイトのコンテンツ: **No** — 字幕の挿入のためにページのテキストをプロセス内で読み取りますが、**端末外には送信されず**（Translator API はローカル実行）、保存もされません。
 
-Then certify:
+その上で以下の宣誓にチェック：
 
-- ☑ I do not sell or transfer user data to third parties outside of approved use cases
-- ☑ I do not use or transfer user data for purposes unrelated to my item's single purpose
-- ☑ I do not use or transfer user data to determine creditworthiness or for lending purposes
+- ☑ 承認された用途以外で第三者にユーザーデータを販売または転送しません
+- ☑ アイテムの単一の目的と関係のない目的で、ユーザーデータを使用または転送しません
+- ☑ 信用調査や貸付の判断を目的としてユーザーデータを使用・転送しません
 
-### Privacy policy URL
+### プライバシーポリシー URL
 
 ```
 https://github.com/itouuuuuuuuu/subtitler/blob/main/PRIVACY.md
@@ -107,45 +112,45 @@ https://github.com/itouuuuuuuuu/subtitler/blob/main/PRIVACY.md
 
 ---
 
-## Visual assets checklist
+## ビジュアルアセットのチェックリスト
 
-Required for submission:
+申請に必須：
 
-- [ ] **Icon 128×128** — already in `extension/icons/icon-128.png`.
-- [ ] **At least 1 screenshot** at **1280×800** or **640×400**. Recommended: 3–5.
-- [ ] **Small promo tile 440×280** — see `assets/promo-440x280.png` (generated by the build).
+- [ ] **アイコン 128×128** — `extension/icons/icon-128.png` に同梱済み。
+- [ ] **スクリーンショット 1280×800（または 640×400）を最低 1 枚**。推奨は 3〜5 枚。
+- [ ] **小プロモタイル 440×280** — `assets/promo-440x280.png`（ビルド時に生成）。
 
-Optional but recommended:
+任意（推奨）：
 
-- [ ] **Marquee promo tile 1400×560** — only needed if you want to be considered for featured placement.
+- [ ] **マーキータイル 1400×560** — 注目枠（Featured）への掲載候補にする場合のみ必要。
 
-### Screenshot ideas
+### スクリーンショット案
 
-1. A real article (e.g. an English blog post or AWS docs page) with subtitler enabled — the Japanese subtitles visible under each sentence.
-2. The same page with translations toggled off (so reviewers can see the "before").
-3. The first-run download banner ("Download translation model?").
-4. The shortcut configuration page at `chrome://extensions/shortcuts`.
+1. 実際の英語記事（英語ブログ記事や AWS のドキュメントなど）で subtitler を有効化し、各文の下に日本語字幕が表示されている状態。
+2. 同じページで翻訳をオフにした状態（レビュアーが「Before」を確認できるように）。
+3. 初回ダウンロード時のバナー（"Download translation model?"）。
+4. ショートカット設定画面（`chrome://extensions/shortcuts`）。
 
-Tip: take 1280×800 captures. macOS — `Cmd+Shift+4`, then space to pick a window, or drag a region. Resize/crop with `sips -z 800 1280 input.png --out screenshot-1.png`.
-
----
-
-## Versioning rules
-
-- The Chrome Web Store rejects re-uploads with the same version. Bump `manifest.json` `version` AND `package.json` `version` together before each upload.
-- Use semver-ish: `0.1.0` → `0.1.1` for bug fixes, `0.2.0` for features. The Web Store accepts up to 4 dot-separated integers.
+ヒント: 1280×800 でキャプチャ。macOS なら `Cmd+Shift+4` のあとスペースでウィンドウ選択、もしくは範囲ドラッグで取得。リサイズ・トリミングは `sips -z 800 1280 input.png --out screenshot-1.png`。
 
 ---
 
-## Submission checklist
+## バージョニングのルール
 
-1. [ ] `npm test` passes.
-2. [ ] Bump `version` in both `manifest.json` and `package.json`.
-3. [ ] `npm run build` → `dist/subtitler-<version>.zip`.
-4. [ ] At Developer Dashboard → **Add new item** → upload the ZIP.
-5. [ ] Fill in store listing using the text above.
-6. [ ] Upload icon, screenshots, and promo tile.
-7. [ ] Set privacy disclosures and link `PRIVACY.md`.
-8. [ ] First release: choose **Unlisted** visibility, install via the unlisted link, smoke-test on a real article.
-9. [ ] Switch to **Public** once you are happy.
-10. [ ] Tag the release in git: `git tag v<version> && git push --tags`.
+- Chrome ウェブストアは同じバージョンでの再アップロードを拒否します。各アップロードの前に `manifest.json` と `package.json` の `version` を必ず一緒に bump してください。
+- semver 風で運用：バグ修正は `0.1.0` → `0.1.1`、機能追加は `0.2.0`。ウェブストアはドット区切りの整数 4 つまで受け付けます。
+
+---
+
+## 申請チェックリスト
+
+1. [ ] `npm test` がパスする。
+2. [ ] `manifest.json` と `package.json` の両方で `version` を bump 済み。
+3. [ ] `npm run build` で `dist/subtitler-<version>.zip` を生成。
+4. [ ] デベロッパーダッシュボード → **新しいアイテム** → ZIP をアップロード。
+5. [ ] 上記のテキストを使ってストア掲載情報を入力。
+6. [ ] アイコン・スクリーンショット・プロモタイルをアップロード。
+7. [ ] プライバシー関連の開示を設定し、`PRIVACY.md` をリンク。
+8. [ ] 初回リリース：可視性を **限定公開（Unlisted）** にし、限定公開のリンクからインストールして実際の記事でスモークテスト。
+9. [ ] 問題なければ **公開（Public）** に切り替え。
+10. [ ] git でリリースタグを打つ：`git tag v<version> && git push --tags`。

@@ -1,45 +1,45 @@
-# Privacy Policy — subtitler
+# プライバシーポリシー — subtitler
 
-_Last updated: 2026-04-30_
+_最終更新日: 2026-04-30_
 
-`subtitler` is a Chrome extension that displays Japanese translations directly beneath English sentences on the web page you are reading.
+`subtitler` は、いま読んでいるウェブページの英文の直下に日本語訳を表示する Chrome 拡張機能です。
 
-## Summary
+## 概要
 
-**The extension does not collect, store, or transmit any user data.**
+**本拡張機能は、ユーザーデータの収集・保存・送信を一切行いません。**
 
-## What data is processed
+## 処理されるデータ
 
-To render subtitles, the extension reads the visible text of the page you have actively enabled it on. That text is passed to Chrome's built-in [Translator API](https://developer.chrome.com/docs/ai/translator-api), which runs the translation model **locally on your device**.
+字幕を描画するために、ユーザーが拡張機能を有効化したページの可視テキストを読み取ります。読み取ったテキストは Chrome 組み込みの [Translator API](https://developer.chrome.com/docs/ai/translator-api) に渡され、翻訳モデルは**ユーザーの端末内（ローカル）で実行**されます。
 
-- No page content is sent to the author of this extension.
-- No page content is sent to any third-party server by this extension.
-- The translation model itself is downloaded by Chrome — not by this extension — and cached by the browser. After the initial download, translation runs entirely offline.
+- ページの内容が本拡張機能の作者に送信されることはありません。
+- ページの内容が本拡張機能から第三者のサーバーに送信されることはありません。
+- 翻訳モデル自体は本拡張機能ではなく Chrome がダウンロードし、ブラウザがキャッシュします。初回ダウンロード後、翻訳は完全にオフラインで実行されます。
 
-## What data is stored
+## 保存されるデータ
 
-None. The extension does not use `chrome.storage`, cookies, `localStorage`, IndexedDB, or any other persistence mechanism. The only state is in-memory and is discarded as soon as the page is closed.
+ありません。本拡張機能は `chrome.storage`、Cookie、`localStorage`、IndexedDB その他の永続化機構を使用しません。状態はメモリ内にのみ保持され、ページを閉じた時点で破棄されます。
 
-## What data is shared
+## 共有されるデータ
 
-None. The extension makes no network requests of its own.
+ありません。本拡張機能は独自にネットワークリクエストを行いません。
 
-## Permissions
+## 権限
 
-The extension declares only the permissions necessary to display subtitles on the page you are reading:
+本拡張機能は、字幕の表示に必要な権限のみを宣言しています。
 
-- **Content script injection on `<all_urls>`** — required to insert translation `<span>` elements next to the original sentences. Translation only runs when you explicitly enable it via the keyboard shortcut (default `Alt+Shift+Y`) or by clicking the toolbar icon.
+- **`<all_urls>` でのコンテンツスクリプト注入** — 原文のすぐ隣に翻訳用の `<span>` 要素を挿入するために必要です。翻訳はユーザーがキーボードショートカット（既定 `Alt+Shift+Y`）を押すか、ツールバーアイコンをクリックして明示的に有効化したときのみ実行されます。
 
-There is no use of `tabs`, `storage`, `cookies`, `webRequest`, `scripting`, or any remote-host permission.
+`tabs` / `storage` / `cookies` / `webRequest` / `scripting` などの権限、およびリモートホスト権限はいずれも使用しません。
 
-## Children's privacy
+## 児童のプライバシー
 
-The extension does not knowingly collect any information from anyone, including children under 13.
+本拡張機能は、13 歳未満の児童を含むいかなる個人からも、意図的な情報収集を行いません。
 
-## Changes to this policy
+## 本ポリシーの変更
 
-If the data practices ever change, this file will be updated and the "Last updated" date above will be revised. Significant changes will also be noted in the GitHub release notes.
+データに関する取り扱いが変更された場合は、本ファイルを更新し、上記「最終更新日」を改訂します。重要な変更は GitHub のリリースノートにも記載します。
 
-## Contact
+## お問い合わせ
 
-Issues and questions: <https://github.com/itouuuuuuuuu/subtitler/issues>
+不具合報告・ご質問: <https://github.com/itouuuuuuuuu/subtitler/issues>
