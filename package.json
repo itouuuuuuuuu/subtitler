@@ -1,7 +1,7 @@
 {
   "name": "subtitler",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Chrome extension that toggles subtitle-style EN-to-JA translations.",
   "scripts": {
     "test": "vitest run",
