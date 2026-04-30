@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "subtitler",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "英語の各文の下に日本語訳を字幕のように表示する Chrome 拡張機能。ショートカット（Alt+Shift+Y）でオン／オフを切り替えできます。",
   "minimum_chrome_version": "138",
   "action": {
@@ -22,19 +22,9 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "css": [
-        "styles.css"
-      ],
-      "run_at": "document_idle"
-    }
+  "permissions": [
+    "activeTab",
+    "scripting"
   ],
   "commands": {
     "toggle-translation": {

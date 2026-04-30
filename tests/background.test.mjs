@@ -7,16 +7,48 @@ import bg from '../extension/background.js';
 describe('sendToggle', () => {
   beforeEach(() => {
     chrome.tabs.sendMessage.mockClear();
+    chrome.scripting.executeScript.mockClear();
+    chrome.scripting.insertCSS.mockClear();
   });
 
-  it('sends a TOGGLE message to the given tab', async () => {
+  it('sends a TOGGLE message to the given tab without re-injecting when a content script already responds', async () => {
     await bg.sendToggle(42);
     expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(42, { type: 'TOGGLE' });
+    expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
+    expect(chrome.scripting.insertCSS).not.toHaveBeenCalled();
   });
 
-  it('swallows errors so a missing content script does not throw', async () => {
+  it('injects content.js + styles.css then retries TOGGLE when no listener exists yet', async () => {
+    chrome.tabs.sendMessage
+      .mockRejectedValueOnce(new Error('No receiving end'))
+      .mockResolvedValueOnce(undefined);
+    await bg.sendToggle(7);
+    expect(chrome.scripting.insertCSS).toHaveBeenCalledWith({
+      target: { tabId: 7 },
+      files: ['styles.css'],
+    });
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith({
+      target: { tabId: 7 },
+      files: ['content.js'],
+    });
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledTimes(2);
+    expect(chrome.tabs.sendMessage).toHaveBeenLastCalledWith(7, { type: 'TOGGLE' });
+  });
+
+  it('swallows injection errors (e.g. chrome:// pages where scripting is forbidden)', async () => {
     chrome.tabs.sendMessage.mockRejectedValueOnce(new Error('No receiving end'));
+    chrome.scripting.executeScript.mockRejectedValueOnce(new Error('Cannot access a chrome:// URL'));
     await expect(bg.sendToggle(7)).resolves.toBeUndefined();
+    // Only the initial TOGGLE attempt; the post-injection retry never runs.
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows errors when the post-injection TOGGLE itself fails', async () => {
+    chrome.tabs.sendMessage
+      .mockRejectedValueOnce(new Error('No receiving end'))
+      .mockRejectedValueOnce(new Error('Tab discarded'));
+    await expect(bg.sendToggle(7)).resolves.toBeUndefined();
+    expect(chrome.scripting.executeScript).toHaveBeenCalled();
   });
 });
 

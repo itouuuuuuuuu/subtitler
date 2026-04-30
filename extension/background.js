@@ -1,12 +1,29 @@
 async function sendToggle(tabId) {
+  // Try the existing content script first. On a fresh tab there is no
+  // listener yet, so this rejects and we fall through to inject.
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE' });
+    return;
+  } catch (_e) {
+    // No receiver — inject and retry below.
+  }
+
+  try {
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ['styles.css'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+  } catch (e) {
+    console.warn(
+      '[subtitler/bg] Could not inject content script. ' +
+        'Note: chrome:// pages, the Web Store, and PDF viewers are not supported.',
+      e?.message
+    );
+    return;
+  }
+
   try {
     await chrome.tabs.sendMessage(tabId, { type: 'TOGGLE' });
   } catch (e) {
-    console.warn(
-      '[subtitler/bg] Could not deliver TOGGLE to content script. ' +
-        'Note: chrome:// pages and the Web Store are not supported.',
-      e?.message
-    );
+    console.warn('[subtitler/bg] TOGGLE after injection failed:', e?.message);
   }
 }
 

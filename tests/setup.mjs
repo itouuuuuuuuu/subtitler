@@ -69,6 +69,10 @@ globalThis.chrome = {
     sendMessage: vi.fn(async () => undefined),
     query: vi.fn(async () => [{ id: 1 }]),
   },
+  scripting: {
+    executeScript: vi.fn(async () => [{ result: undefined }]),
+    insertCSS: vi.fn(async () => undefined),
+  },
   action: {
     onClicked: { addListener: vi.fn() },
   },
