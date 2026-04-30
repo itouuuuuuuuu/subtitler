@@ -41,8 +41,6 @@
 
 `chrome://extensions/shortcuts`（Arc では `arc://extensions/shortcuts`）からショートカットを変更できます。
 
-> **Arc 利用者向け**: 本拡張は意図的に `chrome.commands` での登録に加えて、`window` 上の `keydown` でページ内でもショートカットをキャプチャしています。Arc では `chrome.commands` のイベントが拡張の service worker に届かないことがあるためです。`arc://extensions/shortcuts` でショートカットを変更した場合は、`extension/content.js` 内の `IS_MAC` / `isToggleShortcut` 定数も合わせて更新してください。さもないと、新しいキーではツールバーアイコンしか動作しません。
-
 ### 動作しないページ
 
 以下のページではコンテンツスクリプトを注入できません。
