@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.2",
   "description": "Chrome extension that toggles subtitle-style EN-to-JA translations.",
+  "license": "MIT",
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
